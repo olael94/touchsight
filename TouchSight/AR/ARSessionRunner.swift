@@ -54,9 +54,20 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         session.run(config) // Start the Camera
     }
     
+    /// True if ARKit tracking is settled. Otherwise tells the user to move the phone.
+    private func isTrackingReady(_ frame: ARFrame) -> Bool {
+        guard case .normal = frame.camera.trackingState else {               // .limited carries a reason, so no ==
+            scanStatus = "Tracking not ready. Move the phone slowly, then scan again."
+            coach.announce("Move the phone slowly, then scan again.")
+            return false
+        }
+        return true
+    }
+
     /// Reads all button labels in the current frame (runs in the background).
     func scanButtons() {
         guard !isScanning, let frame = session.currentFrame else { return }  // Already scanning or no frame yet
+        guard isTrackingReady(frame) else { return }                         // 3D positions unreliable until tracking settles
         isScanning = true                                                    // Mark busy
         let mapper = buttonMapper                                            // Local copy for the closure
 
@@ -72,6 +83,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     /// Sends the current frame to Claude, then places the buttons it finds in 3D.
     func scanWithClaude() {
         guard !isScanning, let frame = session.currentFrame else { return }  // Already scanning or no frame yet
+        guard isTrackingReady(frame) else { return }                         // 3D positions unreliable until tracking settles
         isScanning = true                                                    // Mark busy
         scanStatus = "Asking Claude..."                                      // Show progress
         let mapper = buttonMapper
@@ -84,7 +96,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
                 }
                 let points = try await client.findButtons(in: jpeg)          // Ask Claude (waits for network)
                 buttons = mapper.anchor(points, in: frame)                   // Place in 3D, show labels
-                scanStatus = "Claude found \(buttons.count) buttons"         // Report result
+                scanStatus = "Claude found \(points.count), placed \(buttons.count)"  // Placed < found means depth was missing
             } catch {
                 scanStatus = "AI scan failed: \(error.localizedDescription)" // Show what went wrong
             }
