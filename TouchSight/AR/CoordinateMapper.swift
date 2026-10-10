@@ -17,6 +17,11 @@ nonisolated enum CoordinateMapper {  // enum with no cases = namespace for stati
     static func visionToImage(_ point: CGPoint) -> CGPoint {
         CGPoint(x: 1 - point.y, y: 1 - point.x)  // Rotate 90 degrees and flip
     }
+    
+    /// Upright photo point (portrait, origin top-left) -> ARKit image point (landscape, origin top-left)
+    static func uprightToImage(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.y, y: 1 - point.x)  // Rotate back to the sensor's landscape orientation
+    }
 
     /// ARKit image point -> screen point in the camera view
     static func imageToView(_ point: CGPoint, frame: ARFrame, viewportSize: CGSize) -> CGPoint {

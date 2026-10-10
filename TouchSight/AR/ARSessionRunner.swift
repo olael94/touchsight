@@ -19,6 +19,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     var fingertipImagePoint: CGPoint?   // Fingertip in image coords ( nil = no hand)
     var buttons: [PanelButton] = []     // Buttons found by the last scan
     var isScanning = false              // True while OCR is running
+    var scanStatus = ""                 // Message shown above the scan buttons
     
     var trackingStatus = "starting"     // ARKit tracking quality, shown in debug box
 
@@ -28,6 +29,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private let visionQueue = DispatchQueue(label: "touchsight.vision")  // background thread for Vision
     @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
     @ObservationIgnored private let buttonMapper = ButtonMapper()  // NEW: OCR + 3D placement
+    @ObservationIgnored private let claudeClient = ClaudeVisionClient(apiKey: Secrets.anthropicAPIKey)  // Claude vision API
     @ObservationIgnored private let ocrQueue = DispatchQueue(label: "touchsight.ocr")  // NEW: Separate background thread for OCR
 
 
@@ -62,6 +64,29 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
                 self.buttons = found                       // Show results (updates UI)
                 self.isScanning = false                    // Ready for another scan
             }
+        }
+    }
+    
+    /// Sends the current frame to Claude, then places the buttons it finds in 3D.
+    func scanWithClaude() {
+        guard !isScanning, let frame = session.currentFrame else { return }  // Already scanning or no frame yet
+        isScanning = true                                                    // Mark busy
+        scanStatus = "Asking Claude..."                                      // Show progress
+        let mapper = buttonMapper
+        let client = claudeClient
+
+        Task {                                                               // Run async work
+            do {
+                guard let jpeg = FrameJPEGEncoder.uprightJPEG(from: frame) else {  // Frame -> JPEG
+                    throw ClaudeVisionError.badResponse("Could not encode camera image")
+                }
+                let points = try await client.findButtons(in: jpeg)          // Ask Claude (waits for network)
+                buttons = mapper.anchor(points, in: frame)                   // Place in 3D, show labels
+                scanStatus = "Claude found \(buttons.count) buttons"         // Report result
+            } catch {
+                scanStatus = "AI scan failed: \(error.localizedDescription)" // Show what went wrong
+            }
+            isScanning = false                                               // Ready again
         }
     }
 

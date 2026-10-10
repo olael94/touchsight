@@ -52,6 +52,16 @@ nonisolated final class ButtonMapper {
         }
         return buttons
     }
+    
+    /// Places Claude's button points in 3D using LiDAR (same pipeline as OCR).
+    func anchor(_ points: [ClaudeButtonPoint], in frame: ARFrame) -> [PanelButton] {
+        points.compactMap { point in                                                          // Drop points with no depth
+            let imagePoint = CoordinateMapper.uprightToImage(CGPoint(x: point.x, y: point.y))  // Photo -> camera image coords
+            guard let depth = DepthSampler.depth(at: imagePoint, in: frame) else { return nil } // LiDAR distance
+            let world = DepthSampler.worldPoint(at: imagePoint, depth: depth, in: frame)        // 3D position
+            return PanelButton(label: point.label, worldPosition: world)                        // Same model as OCR buttons
+        }
+    }
         
     /// Splits runs of 3+ digits into single characters. Keeps 2-digit labels (elevator floors like "12").
     private func splitDigitRun(in text: String, range: Range<String.Index>) -> [Range<String.Index>] {
