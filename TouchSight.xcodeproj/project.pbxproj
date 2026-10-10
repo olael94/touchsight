@@ -244,6 +244,9 @@
 				DEVELOPMENT_TEAM = X9G2R7X5JK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "TouchSight uses the camera to find panels and track your finger.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TouchSight listens for what you want to do.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "TouchSight turns your voice into a goal.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -281,6 +284,9 @@
 				DEVELOPMENT_TEAM = X9G2R7X5JK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "TouchSight uses the camera to find panels and track your finger.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TouchSight listens for what you want to do.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "TouchSight turns your voice into a goal.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
