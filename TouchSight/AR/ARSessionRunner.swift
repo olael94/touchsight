@@ -16,9 +16,14 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     let session = ARSession()   // The Camera Session
     var fps: Int = 0            // Frames per second, shown on screen
     var hasLiDAR: Bool = false  // True if phone has LiDAR
+    var fingertipImagePoint: CGPoint?   // Fingertip in image coords ( nil = no hand)
 
     @ObservationIgnored private var frameCount = 0  // Frames counted this second (no UI refresh)
     @ObservationIgnored private var lastFPSUpdate = CACurrentMediaTime()    // When FPS was last
+    @ObservationIgnored private let fingertipTracker = FingertipTracker()  // Vision hand detector
+    @ObservationIgnored private let visionQueue = DispatchQueue(label: "touchsight.vision")  // background thread for Vision
+    @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
+
 
     override init() {
         super.init()
@@ -31,8 +36,8 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
 
         // Turn on LiDAR depth if this phone supports it
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
-            config.frameSemantics.insert(.sceneDepth)   //Add a depth mal to every frame
-            hasLiDAR = true                             //Remeber LiDAR is on
+            config.frameSemantics.insert(.sceneDepth)   //Add a depth map to every frame
+            hasLiDAR = true                             //Remember LiDAR is on
         }
 
         session.run(config) // Start the Camera
@@ -45,13 +50,34 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     // Called by ARKit for every new camera frame (~60 per second).
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         frameCount += 1
-        let now = CACurrentMediaTime()          //Current TIme in Seconds
-        let elapsed = now - lastFPSUpdate       //Time since Laser FPS update
+        let now = CACurrentMediaTime()          //Current Time in Seconds
+        let elapsed = now - lastFPSUpdate       //Time since last FPS update
 
         if elapsed >= 1 {                                   // Once Per second
             fps = Int(Double(frameCount) / elapsed)         // Frames divided by seconds
             frameCount = 0                                  // Reset the counter
             lastFPSUpdate = now                             // Restart the timer
         }
+        
+        trackFingertip(in: frame)                           // Start tracking finger
     }
+    
+    // Run hand detection in the background, skip frames while busy
+        private func trackFingertip(in frame: ARFrame) {
+            guard !isProcessingFrame else { return }  // Vision still busy, drop this frame
+            isProcessingFrame = true                  // Mark busy
+
+            let pixelBuffer = frame.capturedImage     // Raw camera image
+            let tracker = fingertipTracker            // Local copy for the background closure
+
+            // This runs a closure on a background thread, like starting a Web Worker job
+            visionQueue.async {                                   // Move to background thread
+                let point = tracker.detectIndexTip(in: pixelBuffer)  // Find fingertip
+                // UI state must only change on the main thread
+                Task { @MainActor in                              // Back to main thread
+                    self.fingertipImagePoint = point              // Save result (updates UI)
+                    self.isProcessingFrame = false                // Ready for next frame
+                }
+            }
+        }
 }

@@ -18,6 +18,8 @@ struct ContentView: View {
         ZStack(alignment: .topLeading) {                  // Layer views, anchored top-left
             ARCameraView(session: arRunner.session)       // Bottom layer: live camera
                 .ignoresSafeArea()                        // Fill the whole screen
+            
+            FingertipDotView(imagePoint: arRunner.fingertipImagePoint, session: arRunner.session)  // Fingertip dot
 
             DebugOverlayView(fps: arRunner.fps, hasLiDAR: arRunner.hasLiDAR)  // Top layer: debug box
         }
