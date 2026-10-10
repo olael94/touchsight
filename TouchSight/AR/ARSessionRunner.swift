@@ -33,6 +33,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private var pendingGoal: String?   // Goal waiting for "which floor are you on?"
     @ObservationIgnored private var fingertipWorldPoint: SIMD3<Float>?  // Smoothed 3D fingertip
     @ObservationIgnored private let buttonMapper = ButtonMapper()  // NEW: OCR + 3D placement
+    @ObservationIgnored private let goalClient = ClaudeGoalClient(apiKey: Secrets.anthropicAPIKey)  // Claude goal planner
     @ObservationIgnored private let claudeClient = ClaudeVisionClient(apiKey: Secrets.anthropicAPIKey)  // Claude vision API
     @ObservationIgnored private let ocrQueue = DispatchQueue(label: "touchsight.ocr")  // NEW: Separate background thread for OCR
 
@@ -109,35 +110,69 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     
     /// Plans the button sequence for a goal and starts guiding.
     func runGoal(_ goal: String) {
-        guard !buttons.isEmpty, let frame = session.currentFrame else {   // Need a scan first
+        guard !buttons.isEmpty else {                                     // Need a scan first
             coach.announce("Scan the panel first.")
             return
         }
         switch GoalPlanner.plan(goal: goal, availableLabels: buttons.map(\.label)) {
         case .plan(let plan):
-            let sequence = plan.sequence.compactMap { label in            // Labels -> real buttons
-                buttons.first { $0.label.uppercased() == label }
-            }
-            guard sequence.count == plan.sequence.count else {           // Some label not found
-                coach.announce("Some buttons are missing. Please scan again.")
-                return
-            }
-            let cameraPosition = SIMD3<Float>(frame.camera.transform.columns.3.x,   // Where the user is now
-                                              frame.camera.transform.columns.3.y,
-                                              frame.camera.transform.columns.3.z)
-            coach.start(sequence: sequence,
-                        panel: PanelFrame(buttons: buttons, cameraPosition: cameraPosition),
-                        summary: plan.summary,
-                        completion: plan.completion)
+            guide(with: plan)                                             // CHANGED: moved into guide(with:)
         case .needsCurrentFloor:
-            pendingGoal = goal                                    // Remember what they asked for
+            pendingGoal = goal                                            // Remember what they asked for
             coach.announce("Which floor are you on now?")
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in   // Wait for the question to finish
-                self?.listenForGoal()                             // Then listen for the answer
+                self?.listenForGoal()                                     // Then listen for the answer
             }
+        case .notUnderstood:
+            planWithClaude(goal)                                          // Rules failed, ask Claude
         case .cannotDo(let reason):
             coach.announce(reason)
         }
+    }
+
+    /// Sends the goal and the panel's buttons to Claude, then guides with its plan.
+    private func planWithClaude(_ goal: String) {
+        scanStatus = "Asking Claude to plan..."
+        coach.announce("Let me think.")                                   // Tell a blind user something is happening
+        let labels = buttons.map(\.label)
+        let client = goalClient
+
+        Task {
+            do {
+                switch try await client.plan(goal: goal, availableLabels: labels) {
+                case .plan(let plan):
+                    scanStatus = "Claude planned: \(plan.sequence.joined(separator: ", "))"
+                    guide(with: plan)
+                case .cannotDo(let reason):
+                    scanStatus = "Claude: \(reason)"
+                    coach.announce(reason)
+                case .needsCurrentFloor, .notUnderstood:                  // Claude never returns these
+                    coach.announce("Sorry, please say that again.")
+                }
+            } catch {
+                scanStatus = "Planning failed: \(error.localizedDescription)"
+                coach.announce("Sorry, I couldn't plan that. Please try again.")
+            }
+        }
+    }
+
+    /// Maps plan labels to real buttons and starts guiding.
+    private func guide(with plan: GoalPlan) {
+        guard let frame = session.currentFrame else { return }
+        let sequence = plan.sequence.compactMap { label in                // Labels -> real buttons
+            buttons.first { $0.label.uppercased() == label.uppercased() } // Case-insensitive ("Start" vs "START")
+        }
+        guard !sequence.isEmpty, sequence.count == plan.sequence.count else {   // Some label not found
+            coach.announce("Some buttons are missing. Please scan again.")
+            return
+        }
+        let cameraPosition = SIMD3<Float>(frame.camera.transform.columns.3.x,   // Where the user is now
+                                          frame.camera.transform.columns.3.y,
+                                          frame.camera.transform.columns.3.z)
+        coach.start(sequence: sequence,
+                    panel: PanelFrame(buttons: buttons, cameraPosition: cameraPosition),
+                    summary: plan.summary,
+                    completion: plan.completion)
     }
     
     /// Starts listening for a spoken goal (tap again to stop early).

@@ -17,6 +17,7 @@ nonisolated struct GoalPlan {
 nonisolated enum GoalPlanResult {
     case plan(GoalPlan)        // Ready to guide
     case needsCurrentFloor     // Elevator call panel, but we don't know where the user is
+    case notUnderstood         // Rules can't parse it, ask Claude
     case cannotDo(String)      // Spoken explanation
 }
 
@@ -55,7 +56,7 @@ nonisolated enum GoalPlanner {
     private static func elevatorPlan(text: String, labels: Set<String>) -> GoalPlanResult {
         guard let destination = lastNumber(matching: #"(?:to|floor)\s+(?:floor\s+)?(\d+)"#, in: text)  // "to floor 5", "floor 3"
                 ?? firstNumber(matching: #"(\d+)\s+floor"#, in: text) else {                           // "3 floor" (from "third floor")
-            return .cannotDo("Sorry, I did not understand. Try saying a floor or a cooking time.")
+            return .notUnderstood                             // CHANGED: was .cannotDo("Sorry, I did not understand...")
         }
 
         let isCallPanel = !labels.isDisjoint(with: ["UP", "DOWN", "CALL"])   // Hall call panel?
