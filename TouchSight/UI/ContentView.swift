@@ -12,6 +12,7 @@ import SwiftUI  // Apple's UI framework
 struct ContentView: View {
     //@State React comparison = useState
     @State private var arRunner = ARSessionRunner()  // Create and keep the AR session alive
+    private let launchRequest = LaunchRequest.shared   // Set by the Action button / Siri
 
     var body: some View {
         // React comparison = stacking layers with positon: absolute
@@ -62,6 +63,17 @@ struct ContentView: View {
         // React comparison like useEffect
         .onAppear { arRunner.start() }      // Start camera when screen shows
         .onDisappear { arRunner.pause() }   // Stop camera when screen hides
+        // touchsight://listen (from a Shortcut, Action button, or Siri) starts listening
+        .onOpenURL { url in
+            if url.host == "listen" { arRunner.handleLaunch() }
+        }
+        
+        // Start listening when launched by the Action button or Siri
+        .onChange(of: launchRequest.listenRequested, initial: true) { _, requested in
+            guard requested else { return }
+            launchRequest.listenRequested = false              // Handle it once
+            arRunner.handleLaunch()
+        }
     }
     
     /// Debug text: step, instruction, and offsets in centimeters.

@@ -10,9 +10,22 @@
 		E45F02473079F2020098B674 /* TouchSight.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TouchSight.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E45F0295307A79560098B674 /* Exceptions for "TouchSight" folder in "TouchSight" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E45F02463079F2020098B674 /* TouchSight */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E45F02493079F2020098B674 /* TouchSight */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E45F0295307A79560098B674 /* Exceptions for "TouchSight" folder in "TouchSight" target */,
+			);
 			path = TouchSight;
 			sourceTree = "<group>";
 		};
@@ -244,6 +257,7 @@
 				DEVELOPMENT_TEAM = X9G2R7X5JK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TouchSight/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "TouchSight uses the camera to find panels and track your finger.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TouchSight listens for what you want to do.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "TouchSight turns your voice into a goal.";
@@ -284,6 +298,7 @@
 				DEVELOPMENT_TEAM = X9G2R7X5JK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TouchSight/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "TouchSight uses the camera to find panels and track your finger.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TouchSight listens for what you want to do.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "TouchSight turns your voice into a goal.";

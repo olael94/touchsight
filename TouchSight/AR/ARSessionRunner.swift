@@ -7,6 +7,7 @@
 
 import Foundation
 import ARKit
+import AVFoundation  // AVAudioSession
 import Observation
 
 /// Owns the ARKit session: camera, world tracking, LiDAR depth.
@@ -31,6 +32,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private let visionQueue = DispatchQueue(label: "touchsight.vision")  // background thread for Vision
     @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
     @ObservationIgnored private var pendingGoal: String?   // Goal waiting for "which floor are you on?"
+    @ObservationIgnored private var goalAfterScan: String?  // Goal spoken before any scan, run after scanning
     @ObservationIgnored private var fingertipWorldPoint: SIMD3<Float>?  // Smoothed 3D fingertip
     @ObservationIgnored private let buttonMapper = ButtonMapper()  // NEW: OCR + 3D placement
     @ObservationIgnored private let goalClient = ClaudeGoalClient(apiKey: Secrets.anthropicAPIKey)  // Claude goal planner
@@ -101,8 +103,13 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
                 let points = try await client.findButtons(in: jpeg)          // Ask Claude (waits for network)
                 buttons = mapper.anchor(points, in: frame)                   // Place in 3D, show labels
                 scanStatus = "Claude found \(points.count), placed \(buttons.count)"  // Placed < found means depth was missing
+                if let goal = goalAfterScan, !buttons.isEmpty {       // A goal was waiting for this scan
+                    goalAfterScan = nil
+                    runGoal(goal)                                     // Now plan and guide
+                }
             } catch {
                 scanStatus = "AI scan failed: \(error.localizedDescription)" // Show what went wrong
+                goalAfterScan = nil                                   // Scan failed, drop the waiting goal
             }
             isScanning = false                                               // Ready again
         }
@@ -111,7 +118,9 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     /// Plans the button sequence for a goal and starts guiding.
     func runGoal(_ goal: String) {
         guard !buttons.isEmpty else {                                     // Need a scan first
-            coach.announce("Scan the panel first.")
+            goalAfterScan = goal                                          // Remember the goal
+            coach.announce("Scanning the panel.")                         // CHANGED: was "Scan the panel first."
+            scanWithClaude()                                              // NEW: scan automatically
             return
         }
         switch GoalPlanner.plan(goal: goal, availableLabels: buttons.map(\.label)) {
@@ -173,6 +182,18 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
                     panel: PanelFrame(buttons: buttons, cameraPosition: cameraPosition),
                     summary: plan.summary,
                     completion: plan.completion)
+    }
+    
+    /// Called when launched from the Action button or Siri: ask, then listen.
+    func handleLaunch() {
+        scanStatus = "What do you want to do?"                                  // Also show it on screen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in  // Let Siri / Shortcuts release the audio
+            try? AVAudioSession.sharedInstance().setActive(true)                // Take the speaker and mic back
+            self?.coach.announce("What do you want to do?")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {             // Let the question finish
+                self?.listenForGoal()
+            }
+        }
     }
     
     /// Starts listening for a spoken goal (tap again to stop early).
