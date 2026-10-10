@@ -25,4 +25,11 @@ nonisolated enum CoordinateMapper {  // enum with no cases = namespace for stati
         return CGPoint(x: normalized.x * viewportSize.width,    // Scale to screen width
                        y: normalized.y * viewportSize.height)   // Scale to screen height
     }
+    
+    /// 3D world point -> screen point, or nil if it is behind the camera
+    static func worldToView(_ worldPoint: SIMD3<Float>, frame: ARFrame, viewportSize: CGSize) -> CGPoint? {
+        let cameraPoint = frame.camera.transform.inverse * SIMD4<Float>(worldPoint, 1)  // Room -> camera space
+        guard cameraPoint.z < 0 else { return nil }  // Positive z = behind the camera, don't draw
+        return frame.camera.projectPoint(worldPoint, orientation: .portrait, viewportSize: viewportSize)  // ARKit projects to screen
+    }
 }

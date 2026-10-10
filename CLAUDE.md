@@ -39,7 +39,7 @@ The user wears or holds the iPhone at chest height (like a body camera), says wh
 
 1. **Launch:** user presses the iPhone **Action button** (or says "Hey Siri, start Fingertip Guide"). An App Intent opens the app and starts a session immediately. No screen tapping required.
 2. **Position:** phone is held against the chest (or in a chest strap/lanyard), back camera facing forward.
-3. **Goal by voice:** app speaks "What do you want to do?" User says "Microwave, two minutes" or "Floor three." (Tap fallback: big on-screen preset buttons for the demo.)
+3. **Goal by voice:** app speaks "What do you want to do?" User says "Microwave, two minutes" or "Floor three." (Tap fallback: big on-screen preset buttons for the demo.) For elevators, the app needs both the **destination floor** and the **current floor**. If the user does not say the current floor, the app asks: "Which floor are you on now?" (see 5.11).
 4. **Find the panel:** user slowly turns their body. The app scans for a button panel. Audio beeps speed up and get louder as the panel moves toward the center of view (metal detector style).
 5. **Lock:** when a panel is detected, the app anchors it in 3D (ARKit) and speaks: "Panel found, slightly to your right, about one meter away."
 6. **Approach:** if the panel is far (more than ~60 cm), the app guides the user closer: "Step forward... slightly right... stop."
@@ -210,6 +210,24 @@ Any state → recovering (panelLost / handLost / lowConfidence) → back to prev
 ```
 Implement as a Swift `enum SessionState` owned by a single `@Observable` / `ObservableObject` `SessionController`. All feedback (speech, beeps, haptics) is driven from state changes, not scattered across files.
 
+### 5.11 Elevator call buttons (outside the elevator)
+Hall call panels often have **no text**: just arrow icons or plain unlabeled buttons. OCR alone cannot find them.
+
+**Goal input:**
+- The user says where they want to go and, ideally, where they are: "I'm on floor 1, going to floor 5."
+- If the current floor is missing, ask to confirm: "Which floor are you on now?" Store both `currentFloor` and `destinationFloor`.
+- Direction = `destinationFloor > currentFloor` ? up : down. If equal, tell the user they are already on that floor.
+
+**Button layout rules:**
+- **Two buttons stacked vertically:** top = `up`, bottom = `down`. Guide to the one matching the direction.
+- **Single button:** the elevator can only go one way from this floor (lowest floor = up, top floor = down), so pressing it calls the elevator regardless. Guide to it and say: "One call button. Press it to call the elevator." Use the current floor to sanity check (single button on a middle floor is unusual, mention it but still guide).
+- Prefer visible arrow icons over position rules when the vision model reports them.
+
+**Detection:**
+- Use the cloud vision pass (Claude vision, see 5.5 step 4) for icon-only and unlabeled buttons. Prompt it to return each button's normalized bounding box plus a role: `up`, `down`, `call`, or a text label.
+- Feed results into the same 3D anchoring pipeline as OCR buttons, so the guidance engine treats them identically.
+- Scheduled as **M2b** (after M2 OCR anchoring), or folded into M6 if time is short.
+
 ---
 
 ## 6. Suggested project structure
@@ -330,6 +348,7 @@ Build starts 8:30 PM Friday. Building entry closes at midnight (stay inside or p
 | M0 | 10:30 PM | Project runs on iPhone, AR camera view, debug overlay shell | Camera preview on phone, FPS shown |
 | M1 | 12:30 AM | Fingertip tracking + coordinate mapping verified | Dot sits on the real fingertip while moving |
 | M2 | 2:00 AM | OCR button mapping + 3D anchoring | Button boxes stay on the real buttons when the phone moves |
+| M2b | 2:45 AM | Claude vision pass for icon/unlabeled buttons (elevator call panels, 5.11) | Up/down buttons get boxes and roles on an unlabeled panel |
 | M3 | 4:00 AM | Guidance engine for ONE hard-coded target, with speech + beeps + dz via LiDAR | Eyes closed, Oliver reaches the target button |
 | M4 | 6:00 AM | Press detection + multi-step sequence + local goal rules | "2, 0, 0, Start" completes end to end |
 | M5 | 8:00 AM | Voice goal (SFSpeechRecognizer) + LLM planner + App Intent / Action button | Action button → speak goal → guided presses |
