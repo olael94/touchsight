@@ -13,12 +13,16 @@ import simd         // 3D vectors
 /// Turns fingertip positions into speech and beeps for one target button.
 @Observable
 final class GuidanceCoach {
-    var target: PanelButton?                 // Button we are guiding to (nil = not guiding)
+    var steps: [PanelButton] = []            // Buttons to press, in order
+    var stepIndex = 0                        // Which step we're on
+    var target: PanelButton? { stepIndex < steps.count ? steps[stepIndex] : nil }  // CHANGED: current step's button
     var instruction: GuidanceInstruction?    // Current direction (for the debug box)
     var offset: GuidanceOffset?              // Current dx/dy/dz (for the debug box)
     var isGuiding: Bool { target != nil }
 
     @ObservationIgnored private var panel: PanelFrame?
+    @ObservationIgnored private var completion = ""                    // Said when all steps are done
+    @ObservationIgnored private var pressDetector = PressDetector()    // Dwell + release logic
     @ObservationIgnored private let speaker = Speaker()
     @ObservationIgnored private let beeper = BeepPlayer()
     @ObservationIgnored private var candidate: GuidanceInstruction?   // Instruction waiting to become stable
@@ -29,25 +33,45 @@ final class GuidanceCoach {
     @ObservationIgnored private var lastHandSeen: CFTimeInterval = 0
     @ObservationIgnored private var lastHandWarning: CFTimeInterval = 0
 
-    func start(target: PanelButton, panel: PanelFrame) {
-        self.target = target
+    // CHANGED: takes a whole sequence
+    func start(sequence: [PanelButton], panel: PanelFrame, summary: String, completion: String) {
+        guard let first = sequence.first else { return }
+        steps = sequence
+        stepIndex = 0
         self.panel = panel
-        instruction = nil
-        offset = nil
-        candidate = nil
-        candidateCount = 0
-        lastSpoken = nil
-        let now = CACurrentMediaTime()
-        lastHandSeen = now
-        lastSpeechTime = now + 1.5    // Let the intro sentence finish before directions
-        speaker.say("Guiding you to \(target.label). Point at the panel.")
+        self.completion = completion
+        resetForNewTarget()
+        say("\(summary) First, \(first.label).", pause: 3)   // e.g. "I will guide you to press 2, 0, 0, START. First, 2."
     }
 
     func stop() {
-        target = nil
+        steps = []
+        stepIndex = 0
         panel = nil
         instruction = nil
         offset = nil
+    }
+    
+    // Speak a one-off message (errors, questions)
+    func announce(_ text: String) {
+        speaker.say(text)
+    }
+
+    // Called by press detection or the manual "Pressed" button
+    func confirmPress() {
+        guard let pressed = target else { return }
+        beeper.playConfirm()                         // High confirmation tone
+        stepIndex += 1                               // Move to the next button
+
+        guard let next = target else {               // No more steps
+            say("Pressed. \(completion)", pause: 0)  // e.g. "Microwave set for 2 minutes."
+            stop()
+            return
+        }
+        let nextWord = next.id == pressed.id ? "Again" : "Next"   // Same button twice ("0, 0")
+        resetForNewTarget()
+        pressDetector.requireRelease()               // Must lift before the next press counts
+        say("Pressed. \(nextWord), \(next.label).", pause: 1.5)
     }
 
     /// Called every time a new fingertip position arrives (nil = no hand).
@@ -72,6 +96,12 @@ final class GuidanceCoach {
         offset = newOffset
         instruction = newInstruction
 
+        // NEW: press detection
+        if pressDetector.update(isOnTarget: GuidanceEngine.isPressing(newOffset), now: now) {   // Looser press zone
+            confirmPress()
+            return
+        }
+        
         // Only speak when the instruction is stable for 3 updates (prevents flip-flopping)
         if newInstruction == candidate {
             candidateCount += 1
@@ -91,5 +121,21 @@ final class GuidanceCoach {
             beeper.play()
             lastBeepTime = now
         }
+    }
+    
+    // Clear per-target state when moving to a new button
+    private func resetForNewTarget() {
+        instruction = nil
+        offset = nil
+        candidate = nil
+        candidateCount = 0
+        lastSpoken = nil
+        lastHandSeen = CACurrentMediaTime()
+    }
+
+    // Speak and hold off directions until the sentence is likely finished
+    private func say(_ text: String, pause: CFTimeInterval) {
+        speaker.say(text)
+        lastSpeechTime = CACurrentMediaTime() + pause
     }
 }

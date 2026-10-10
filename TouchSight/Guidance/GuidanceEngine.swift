@@ -21,6 +21,7 @@ nonisolated struct GuidanceOffset {
 nonisolated enum GuidanceEngine {
     static let lateralTolerance: Float = 0.02   // 2 cm: close enough left/right and up/down
     static let depthTolerance: Float = 0.015    // 1.5 cm: close enough to the panel surface
+    static let pressTolerance: Float = 0.025    // 2.5 cm press zone (looser than guidance, LiDAR is noisy)
 
     static func offset(from fingertip: SIMD3<Float>, to target: SIMD3<Float>, panel: PanelFrame) -> GuidanceOffset {
         let delta = target - fingertip                       // Arrow from finger to target
@@ -38,5 +39,10 @@ nonisolated enum GuidanceEngine {
         }
         if offset.dz > depthTolerance { return .forward }             // Lined up, move toward the panel
         return .onTarget                                              // Lined up and touching
+    }
+
+    /// True when the finger is close enough to count as pressing (sideways and depth).
+    static func isPressing(_ offset: GuidanceOffset) -> Bool {
+        max(abs(offset.dx), abs(offset.dy)) < pressTolerance && offset.dz < pressTolerance
     }
 }

@@ -13,6 +13,7 @@ final class BeepPlayer {
     private let engine = AVAudioEngine()          // Audio processing graph
     private let player = AVAudioPlayerNode()      // Plays sound buffers
     private let toneBuffer: AVAudioPCMBuffer?     // The beep sound, generated once
+    private let confirmBuffer: AVAudioPCMBuffer?  // Higher, longer "pressed" tone
 
     init() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers])  // Play even when the silent switch is on
@@ -20,16 +21,27 @@ final class BeepPlayer {
 
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!  // CD-quality mono
         toneBuffer = BeepPlayer.makeTone(format: format, frequency: 880, duration: 0.06) // 60 ms beep at 880 Hz
+        confirmBuffer = BeepPlayer.makeTone(format: format, frequency: 1320, duration: 0.15)  // 150 ms at 1320 Hz
         engine.attach(player)                                                            // Add player to the graph
         engine.connect(player, to: engine.mainMixerNode, format: format)                 // Player -> speaker
         try? engine.start()                                                              // Start audio
     }
 
     func play() {
-        guard let toneBuffer else { return }
-        if !engine.isRunning { try? engine.start() }                         // Restart if iOS stopped it
-        player.scheduleBuffer(toneBuffer, at: nil, options: .interrupts)     // Queue the beep now
-        if !player.isPlaying { player.play() }                               // Make sure the player runs
+        schedule(toneBuffer)            // CHANGED: normal proximity beep
+    }
+
+    // Confirmation tone after a press
+    func playConfirm() {
+        schedule(confirmBuffer)
+    }
+
+    // Shared playback code (moved from play)
+    private func schedule(_ buffer: AVAudioPCMBuffer?) {
+        guard let buffer else { return }
+        if !engine.isRunning { try? engine.start() }                     // Restart if iOS stopped it
+        player.scheduleBuffer(buffer, at: nil, options: .interrupts)     // Play now
+        if !player.isPlaying { player.play() }
     }
 
     /// Builds a sine wave beep with a short fade-out (avoids a click).

@@ -42,17 +42,21 @@ struct ContentView: View {
                 .padding(.horizontal)                                        // Space from edges
                 .disabled(arRunner.isScanning)                    // Both disabled while scanning
                 
-                // Guide button below the scan buttons
-                scanButton(title: arRunner.coach.isGuiding ? "Stop Guiding" : "Guide to 5",
-                           color: arRunner.coach.isGuiding ? .red : .green) {
-                    if arRunner.coach.isGuiding {
-                        arRunner.stopGuidance()                   // Stop
-                    } else {
-                        arRunner.startGuidance(to: "5")           // Hard-coded target for M3
+                if arRunner.coach.isGuiding {                     // While guiding: stop or confirm
+                    HStack(spacing: 12) {
+                        scanButton(title: "Stop", color: .red) { arRunner.stopGuidance() }
+                        scanButton(title: "Pressed", color: .orange) { arRunner.coach.confirmPress() }  // Manual fallback
                     }
+                    .padding([.horizontal, .bottom])
+                } else {                                          // Otherwise: test goals (voice comes in M5)
+                    HStack(spacing: 12) {
+                        scanButton(title: "2 min", color: .green) { arRunner.runGoal("microwave 2 minutes") }
+                        scanButton(title: "Floor 3", color: .green) { arRunner.runGoal("floor 3") }
+                        scanButton(title: "1 → 5", color: .green) { arRunner.runGoal("from floor 1 to floor 5") }
+                    }
+                    .padding([.horizontal, .bottom])
+                    .disabled(arRunner.buttons.isEmpty)           // Need a scan first
                 }
-                .padding([.horizontal, .bottom])
-                .disabled(arRunner.buttons.isEmpty)               // Need a scan first
             }
         }
         // React comparison like useEffect
@@ -60,12 +64,13 @@ struct ContentView: View {
         .onDisappear { arRunner.pause() }   // Stop camera when screen hides
     }
     
-    /// Debug text: current instruction and offsets in centimeters.
+    /// Debug text: step, instruction, and offsets in centimeters.
     private var guidanceText: String {
-        guard arRunner.coach.isGuiding else { return "Guide: off" }
-        guard let offset = arRunner.coach.offset, let instruction = arRunner.coach.instruction else { return "Guide: no hand" }
-        return String(format: "Guide: %@\ndx %.1f dy %.1f dz %.1f cm",
-                      instruction.spokenText, offset.dx * 100, offset.dy * 100, offset.dz * 100)
+        guard let target = arRunner.coach.target else { return "Guide: off" }
+        let step = "Step \(arRunner.coach.stepIndex + 1)/\(arRunner.coach.steps.count): \(target.label)"   // e.g. "Step 2/4: 0"
+        guard let offset = arRunner.coach.offset, let instruction = arRunner.coach.instruction else { return "\(step)\nno hand" }
+        return String(format: "%@ %@\ndx %.1f dy %.1f dz %.1f cm",
+                      step, instruction.spokenText, offset.dx * 100, offset.dy * 100, offset.dz * 100)
     }
     
     /// One big rounded scan button.

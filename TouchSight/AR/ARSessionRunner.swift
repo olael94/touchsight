@@ -92,14 +92,33 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         }
     }
     
-    /// Starts guiding the finger to the button with this label (or the first button).
-    func startGuidance(to label: String) {
-        guard !buttons.isEmpty, let frame = session.currentFrame else { return }                 // Need a scan first
-        let target = buttons.first { $0.label.uppercased() == label.uppercased() } ?? buttons[0]  // Find the target
-        let cameraPosition = SIMD3<Float>(frame.camera.transform.columns.3.x,                    // Where the user is now
-                                          frame.camera.transform.columns.3.y,
-                                          frame.camera.transform.columns.3.z)
-        coach.start(target: target, panel: PanelFrame(buttons: buttons, cameraPosition: cameraPosition))  // Go
+    /// Plans the button sequence for a goal and starts guiding.
+    func runGoal(_ goal: String) {
+        guard !buttons.isEmpty, let frame = session.currentFrame else {   // Need a scan first
+            coach.announce("Scan the panel first.")
+            return
+        }
+        switch GoalPlanner.plan(goal: goal, availableLabels: buttons.map(\.label)) {
+        case .plan(let plan):
+            let sequence = plan.sequence.compactMap { label in            // Labels -> real buttons
+                buttons.first { $0.label.uppercased() == label }
+            }
+            guard sequence.count == plan.sequence.count else {           // Some label not found
+                coach.announce("Some buttons are missing. Please scan again.")
+                return
+            }
+            let cameraPosition = SIMD3<Float>(frame.camera.transform.columns.3.x,   // Where the user is now
+                                              frame.camera.transform.columns.3.y,
+                                              frame.camera.transform.columns.3.z)
+            coach.start(sequence: sequence,
+                        panel: PanelFrame(buttons: buttons, cameraPosition: cameraPosition),
+                        summary: plan.summary,
+                        completion: plan.completion)
+        case .needsCurrentFloor:
+            coach.announce("Which floor are you on now?")                // Voice answer comes in M5
+        case .cannotDo(let reason):
+            coach.announce(reason)
+        }
     }
 
     func stopGuidance() {
