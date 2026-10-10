@@ -13,10 +13,11 @@ import SwiftUI  // Apple's UI framework
 struct ButtonOverlayView: View {
     let buttons: [PanelButton]  // Buttons to draw
     let session: ARSession      // For the current camera position
+    let targetID: UUID?         // Button being guided to (drawn green)
 
     var body: some View {
         TimelineView(.animation) { timeline in   // Ticks every screen refresh
-            ButtonLabelsLayer(buttons: buttons, session: session, tick: timeline.date)  // New date each tick forces a redraw
+            ButtonLabelsLayer(buttons: buttons, session: session, tick: timeline.date, targetID: targetID)  // New date each tick forces a redraw
         }
         .ignoresSafeArea()        // Match the camera's full-screen area
         .allowsHitTesting(false)  // Don't block taps
@@ -28,6 +29,7 @@ private struct ButtonLabelsLayer: View {
     let buttons: [PanelButton]  // Buttons to draw
     let session: ARSession      // For the current camera position
     let tick: Date              // Changes every frame, so SwiftUI re-runs body
+    let targetID: UUID?         // Button being guided to
 
     var body: some View {
         GeometryReader { geo in                    // Screen size
@@ -42,7 +44,7 @@ private struct ButtonLabelsLayer: View {
                             .font(.caption.bold())         // Small bold font
                             .foregroundStyle(.black)       // Black text
                             .padding(4)                    // Space inside the tag
-                            .background(.yellow, in: RoundedRectangle(cornerRadius: 4))  // Yellow tag
+                            .background(button.id == targetID ? .green : .yellow, in: RoundedRectangle(cornerRadius: 4))  // CHANGED: green = target
                             .position(screenPoint)         // Place on the real button
                     }
                 }

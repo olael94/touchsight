@@ -20,6 +20,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     var buttons: [PanelButton] = []     // Buttons found by the last scan
     var isScanning = false              // True while OCR is running
     var scanStatus = ""                 // Message shown above the scan buttons
+    let coach = GuidanceCoach()         // Speech + beeps guidance
     
     var trackingStatus = "starting"     // ARKit tracking quality, shown in debug box
 
@@ -28,6 +29,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private let fingertipTracker = FingertipTracker()  // Vision hand detector
     @ObservationIgnored private let visionQueue = DispatchQueue(label: "touchsight.vision")  // background thread for Vision
     @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
+    @ObservationIgnored private var fingertipWorldPoint: SIMD3<Float>?  // Smoothed 3D fingertip
     @ObservationIgnored private let buttonMapper = ButtonMapper()  // NEW: OCR + 3D placement
     @ObservationIgnored private let claudeClient = ClaudeVisionClient(apiKey: Secrets.anthropicAPIKey)  // Claude vision API
     @ObservationIgnored private let ocrQueue = DispatchQueue(label: "touchsight.ocr")  // NEW: Separate background thread for OCR
@@ -89,6 +91,20 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
             isScanning = false                                               // Ready again
         }
     }
+    
+    /// Starts guiding the finger to the button with this label (or the first button).
+    func startGuidance(to label: String) {
+        guard !buttons.isEmpty, let frame = session.currentFrame else { return }                 // Need a scan first
+        let target = buttons.first { $0.label.uppercased() == label.uppercased() } ?? buttons[0]  // Find the target
+        let cameraPosition = SIMD3<Float>(frame.camera.transform.columns.3.x,                    // Where the user is now
+                                          frame.camera.transform.columns.3.y,
+                                          frame.camera.transform.columns.3.z)
+        coach.start(target: target, panel: PanelFrame(buttons: buttons, cameraPosition: cameraPosition))  // Go
+    }
+
+    func stopGuidance() {
+        coach.stop()
+    }
 
     func pause() {
         session.pause() //Stop the Camera
@@ -114,18 +130,29 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         guard !isProcessingFrame else { return }  // Vision still busy, drop this frame
         isProcessingFrame = true                  // Mark busy
 
-        let pixelBuffer = frame.capturedImage     // Raw camera image
         let tracker = fingertipTracker            // Local copy for the background closure
 
         // This runs a closure on a background thread, like starting a Web Worker job
-        visionQueue.async {                                   // Move to background thread
-            let point = tracker.detectIndexTip(in: pixelBuffer)  // Find fingertip
+        visionQueue.async {                                                          // Move to background thread
+            let point = tracker.detectIndexTip(in: frame.capturedImage)              // 2D fingertip from the frame
+            let world = point.flatMap { DepthSampler.worldPoint(at: $0, in: frame) } // 3D fingertip via LiDAR
             // UI state must only change on the main thread
-            Task { @MainActor in                              // Back to main thread
-                self.fingertipImagePoint = point              // Save result (updates UI)
-                self.isProcessingFrame = false                // Ready for next frame
+            Task { @MainActor in                                                     // Back to main thread
+                self.fingertipImagePoint = point                                     // Red dot
+                self.updateFingertipWorld(world)                                     // Smooth + guide
+                self.isProcessingFrame = false                                       // Ready for next frame
             }
         }
+    }
+    
+    /// Smooths the 3D fingertip (less jitter) and feeds the guidance coach.
+    private func updateFingertipWorld(_ raw: SIMD3<Float>?) {
+        if let raw {
+            fingertipWorldPoint = fingertipWorldPoint.map { $0 * 0.6 + raw * 0.4 } ?? raw  // 60% old + 40% new
+        } else {
+            fingertipWorldPoint = nil                                                     // Hand lost
+        }
+        coach.update(fingertip: fingertipWorldPoint)                                      // Speak / beep
     }
     
     // ARKit calls this when tracking quality changes

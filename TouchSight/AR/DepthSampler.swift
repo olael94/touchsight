@@ -61,4 +61,10 @@ nonisolated enum DepthSampler {
         let world = camera.transform * cameraPoint        // Camera space -> room space
         return SIMD3<Float>(world.x, world.y, world.z)
     }
+    
+    /// Image point -> 3D point in one step (nil if no depth there).
+    static func worldPoint(at imagePoint: CGPoint, in frame: ARFrame) -> SIMD3<Float>? {
+        guard let depth = depth(at: imagePoint, in: frame) else { return nil }  // LiDAR distance
+        return worldPoint(at: imagePoint, depth: depth, in: frame)            // Unproject to 3D
+    }
 }
