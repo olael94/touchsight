@@ -1,0 +1,13 @@
+# Secrets (never commit API keys, repo is public)
+Secrets.swift
+*.xcconfig
+
+# Xcode per-user files
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# macOS and IDE
+.DS_Store
+.idea/
