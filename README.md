@@ -2,11 +2,19 @@
 
 **A white cane gets you to the microwave. TouchSight gets your finger to the button.**
 
-TouchSight is an iOS app that helps blind and low-vision people press the right buttons on flat, non-tactile panels: microwaves, appliances, and elevators. It tracks the user's fingertip with the iPhone camera and LiDAR, and guides it to the exact button by voice, sound, and haptics-style beeps.
+TouchSight is an iOS app that helps blind and low-vision people press the right buttons on flat, non-tactile panels: microwaves, appliances, and elevators. It tracks the user's fingertip with the iPhone camera and LiDAR, and guides it to the exact button by voice, beeps, and haptics felt against the chest.
 
 Built solo by **Oliver Rivera** at **Ensign BUILD 2026** (Ensign College, Salt Lake City, October 9 to 10, 2026).
 
 ---
+
+## Inspiration
+
+There are great apps that help blind people get around: they guide them along streets and warn them about obstacles. But once they arrive at an elevator or a kitchen, there is no app, at least that I know of, that helps them find the button panel and press the right button on their own. Many panels are flat, with no braille and no bumps, so calling an elevator or setting a microwave still means asking someone for help.
+
+TouchSight guides your finger, not just your feet. Elevators and microwaves are only the start: the same idea works for ATMs, thermostats, washing machines, and kiosks.
+
+This was my first time using Xcode and Swift, so it was a real challenge. With Claude as my mentor, I built this working MVP overnight.
 
 ## The problem
 
