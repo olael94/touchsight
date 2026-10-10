@@ -23,6 +23,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     var scanStatus = ""                 // Message shown above the scan buttons
     let coach = GuidanceCoach()         // Speech + beeps guidance
     let listener = GoalListener()       // Voice input
+    var isApproaching = false           // Walking toward the panel
     
     var trackingStatus = "starting"     // ARKit tracking quality, shown in debug box
 
@@ -33,6 +34,11 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
     @ObservationIgnored private var pendingGoal: String?   // Goal waiting for "which floor are you on?"
     @ObservationIgnored private var goalAfterScan: String?  // Goal spoken before any scan, run after scanning
+    @ObservationIgnored private let panelFinder = PanelFinder()                                // Rectangle detector
+    @ObservationIgnored private let finderQueue = DispatchQueue(label: "touchsight.finder")    // Its own background thread
+    @ObservationIgnored private var finderBusy = false                                         // Skip frames while busy
+    @ObservationIgnored private var lastFinderRun: CFTimeInterval = 0                          // Throttle to ~3 per second
+    @ObservationIgnored private var approachGuide = ApproachGuide()                            // Approach logic
     @ObservationIgnored private var fingertipWorldPoint: SIMD3<Float>?  // Smoothed 3D fingertip
     @ObservationIgnored private let buttonMapper = ButtonMapper()  // NEW: OCR + 3D placement
     @ObservationIgnored private let goalClient = ClaudeGoalClient(apiKey: Secrets.anthropicAPIKey)  // Claude goal planner
@@ -119,8 +125,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     func runGoal(_ goal: String) {
         guard !buttons.isEmpty else {                                     // Need a scan first
             goalAfterScan = goal                                          // Remember the goal
-            coach.announce("Scanning the panel.")                         // CHANGED: was "Scan the panel first."
-            scanWithClaude()                                              // NEW: scan automatically
+            startApproach()                                               // CHANGED: find + walk to the panel first
             return
         }
         switch GoalPlanner.plan(goal: goal, availableLabels: buttons.map(\.label)) {
@@ -186,6 +191,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     
     /// Called when launched from the Action button or Siri: ask, then listen.
     func handleLaunch() {
+        buttons = []                                                      // New launch = new panel, start fresh
         scanStatus = "What do you want to do?"                                  // Also show it on screen
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in  // Let Siri / Shortcuts release the audio
             try? AVAudioSession.sharedInstance().setActive(true)                // Take the speaker and mic back
@@ -228,7 +234,51 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     }
 
     func stopGuidance() {
+        isApproaching = false                                             // Also cancel approach
+        goalAfterScan = nil
         coach.stop()
+    }
+    
+    /// Starts searching for the panel and guiding the user toward it.
+    func startApproach() {
+        isApproaching = true
+        approachGuide.reset(now: CACurrentMediaTime())
+        scanStatus = "Looking for the panel..."
+        coach.announce("Looking for the panel. Turn slowly.")
+    }
+
+    /// Runs rectangle detection in the background, about 3 times per second.
+    private func findPanel(in frame: ARFrame) {
+        let now = CACurrentMediaTime()
+        guard !finderBusy, now - lastFinderRun > 0.3 else { return }   // Busy or too soon
+        finderBusy = true
+        lastFinderRun = now
+        let finder = panelFinder
+
+        finderQueue.async {                                             // Background thread
+            let sighting = finder.findPanel(in: frame)                  // Rectangle + LiDAR distance
+            Task { @MainActor in                                        // Back to main thread
+                self.finderBusy = false
+                self.handleSighting(sighting)
+            }
+        }
+    }
+
+    /// Speaks / beeps for one sighting, and scans when the user arrives.
+    private func handleSighting(_ sighting: PanelSighting?) {
+        guard isApproaching else { return }
+        let step = approachGuide.update(sighting: sighting, now: CACurrentMediaTime())
+        if let sighting {
+            scanStatus = String(format: "Panel %.1f m, offset %.2f", sighting.distance, sighting.horizontalOffset)  // Debug info
+        }
+        if let speech = step.speech { coach.announce(speech) }
+        if step.beep { coach.playCue() }
+        if step.arrived {
+            isApproaching = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in   // Give the user time to hold still
+                self?.scanWithClaude()                                              // Then scan; goalAfterScan runs after
+            }
+        }
     }
 
     func pause() {
@@ -248,6 +298,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         }
         
         trackFingertip(in: frame)                           // Start tracking finger
+        if isApproaching { findPanel(in: frame) }           // Search for the panel while approaching
     }
     
     // Run hand detection in the background, skip frames while busy

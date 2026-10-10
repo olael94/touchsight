@@ -43,7 +43,7 @@ struct ContentView: View {
                 .padding(.horizontal)                                        // Space from edges
                 .disabled(arRunner.isScanning)                    // Both disabled while scanning
                 
-                if arRunner.coach.isGuiding {                     // While guiding: stop or confirm
+                if arRunner.coach.isGuiding || arRunner.isApproaching {   // CHANGED: added isApproaching
                     HStack(spacing: 12) {
                         scanButton(title: "Stop", color: .red) { arRunner.stopGuidance() }
                         scanButton(title: "Pressed", color: .orange) { arRunner.coach.confirmPress() }  // Manual fallback
