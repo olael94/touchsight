@@ -24,6 +24,11 @@ final class GoalListener {
     @ObservationIgnored private var onFinished: ((String) -> Void)?                        // Who gets the final text
 
     /// Asks for speech + microphone permission (shows the iOS popups the first time).
+    /// Words the recognizer should favor (helps with "one" vs "five" in noisy rooms).
+    private static let expectedWords = ["floor", "lobby", "elevator", "microwave", "minutes", "seconds",
+                                        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+                                        "first", "second", "third", "fourth", "fifth", "start", "stop"]
+
     func requestPermissions() async -> Bool {
         let speechAllowed = await withCheckedContinuation { continuation in   // Wrap the old callback API in async
             SFSpeechRecognizer.requestAuthorization { status in
@@ -48,6 +53,7 @@ final class GoalListener {
         if recognizer.supportsOnDeviceRecognition {
             request.requiresOnDeviceRecognition = true          // Private and works offline
         }
+        request.contextualStrings = Self.expectedWords          // Hint: words we expect to hear
         self.request = request
 
         let input = audioEngine.inputNode                       // The microphone

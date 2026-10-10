@@ -17,7 +17,8 @@ final class BeepPlayer {
 
     init() {
         try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .duckOthers])  // CHANGED: allow mic + loud speaker (still plays with silent switch on)
-        try? AVAudioSession.sharedInstance().setActive(true)                                                // Turn audio on
+        try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)    // NEW: keep haptics working with the mic session
+        DispatchQueue.global().async { try? AVAudioSession.sharedInstance().setActive(true) }               // Turn audio on (off the main thread)
 
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!  // CD-quality mono
         toneBuffer = BeepPlayer.makeTone(format: format, frequency: 880, duration: 0.06) // 60 ms beep at 880 Hz

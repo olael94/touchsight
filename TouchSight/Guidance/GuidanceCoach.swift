@@ -25,6 +25,7 @@ final class GuidanceCoach {
     @ObservationIgnored private var pressDetector = PressDetector()    // Dwell + release logic
     @ObservationIgnored private let speaker = Speaker()
     @ObservationIgnored private let beeper = BeepPlayer()
+    @ObservationIgnored private let haptics = HapticPlayer()          // Taps felt against the chest
     @ObservationIgnored private var candidate: GuidanceInstruction?   // Instruction waiting to become stable
     @ObservationIgnored private var candidateCount = 0                // How many updates in a row it held
     @ObservationIgnored private var lastSpoken: GuidanceInstruction?  // Last word said
@@ -70,6 +71,7 @@ final class GuidanceCoach {
     func confirmPress() {
         guard let pressed = target else { return }
         beeper.playConfirm()                         // High confirmation tone
+        haptics.success()                            // Distinct buzz for "pressed"
         stepIndex += 1                               // Move to the next button
 
         guard let next = target else {               // No more steps
@@ -128,6 +130,7 @@ final class GuidanceCoach {
         let beepInterval = newInstruction == .onTarget ? 0.08 : Double(min(max(newOffset.distance * 2, 0.1), 0.8))
         if now - lastBeepTime > beepInterval {
             beeper.play()
+            haptics.pulse(closeness: 1 - Double(min(newOffset.distance / 0.3, 1)))   // Stronger when within 30 cm
             lastBeepTime = now
         }
     }

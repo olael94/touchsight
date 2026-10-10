@@ -61,7 +61,7 @@ nonisolated enum GoalPlanner {
 
         let isCallPanel = !labels.isDisjoint(with: ["UP", "DOWN", "CALL"])   // Hall call panel?
         if !isCallPanel {                                                     // Inside the elevator: press the floor number
-            let label = String(destination)
+            let label = floorLabel(destination, labels: labels)               // "1" might be "L" or "G"
             guard labels.contains(label) else { return .cannotDo("I can't find floor \(destination) on this panel.") }
             return .plan(GoalPlan(sequence: [label],
                                   summary: "I will guide you to floor \(destination).",
@@ -76,15 +76,22 @@ nonisolated enum GoalPlanner {
         let direction = destination > current ? "UP" : "DOWN"                // Which way to go
         if labels.contains(direction) {                                       // Two-button panel
             return .plan(GoalPlan(sequence: [direction],
-                                  summary: "Going \(direction.lowercased()). I will guide you to the \(direction.lowercased()) button.",
+                                  summary: "From floor \(current) to floor \(destination). Going \(direction.lowercased()). I will guide you to the \(direction.lowercased()) button.",
                                   completion: "Elevator called."))
         }
         if labels.contains("CALL") {                                          // Single-button panel
             return .plan(GoalPlan(sequence: ["CALL"],
-                                  summary: "One call button. I will guide you to it.",
+                                  summary: "From floor \(current) to floor \(destination). One call button. I will guide you to it.",
                                   completion: "Elevator called."))
         }
         return .cannotDo("This panel has no \(direction.lowercased()) button.")
+    }
+
+    /// The label for a floor on this panel. Floor 1 is often "L" (lobby) or "G" (ground).
+    private static func floorLabel(_ floor: Int, labels: Set<String>) -> String {
+        let label = String(floor)
+        guard floor == 1, !labels.contains(label) else { return label }
+        return ["L", "G", "LOBBY"].first { labels.contains($0) } ?? label
     }
 
     /// Lowercase and turn number words into digits ("third floor" -> "3 floor").
