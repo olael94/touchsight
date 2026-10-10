@@ -11,3 +11,4 @@ build/
 # macOS and IDE
 .DS_Store
 .idea/
+CLAUDE.md
