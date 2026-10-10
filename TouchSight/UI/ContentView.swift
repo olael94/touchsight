@@ -50,8 +50,8 @@ struct ContentView: View {
                     .padding([.horizontal, .bottom])
                 } else {                                          // Otherwise: test goals (voice comes in M5)
                     HStack(spacing: 12) {
+                        scanButton(title: arRunner.listener.isListening ? "Done" : "Speak", color: .indigo) { arRunner.listenForGoal() }  // Voice goal
                         scanButton(title: "2 min", color: .green) { arRunner.runGoal("microwave 2 minutes") }
-                        scanButton(title: "Floor 3", color: .green) { arRunner.runGoal("floor 3") }
                         scanButton(title: "1 → 5", color: .green) { arRunner.runGoal("from floor 1 to floor 5") }
                     }
                     .padding([.horizontal, .bottom])

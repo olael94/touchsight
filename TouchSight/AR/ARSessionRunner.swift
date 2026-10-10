@@ -21,6 +21,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     var isScanning = false              // True while OCR is running
     var scanStatus = ""                 // Message shown above the scan buttons
     let coach = GuidanceCoach()         // Speech + beeps guidance
+    let listener = GoalListener()       // Voice input
     
     var trackingStatus = "starting"     // ARKit tracking quality, shown in debug box
 
@@ -29,6 +30,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private let fingertipTracker = FingertipTracker()  // Vision hand detector
     @ObservationIgnored private let visionQueue = DispatchQueue(label: "touchsight.vision")  // background thread for Vision
     @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
+    @ObservationIgnored private var pendingGoal: String?   // Goal waiting for "which floor are you on?"
     @ObservationIgnored private var fingertipWorldPoint: SIMD3<Float>?  // Smoothed 3D fingertip
     @ObservationIgnored private let buttonMapper = ButtonMapper()  // NEW: OCR + 3D placement
     @ObservationIgnored private let claudeClient = ClaudeVisionClient(apiKey: Secrets.anthropicAPIKey)  // Claude vision API
@@ -52,6 +54,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         }
 
         session.run(config) // Start the Camera
+        Task { _ = await listener.requestPermissions() }   // Ask for mic + speech permission at launch
     }
     
     /// True if ARKit tracking is settled. Otherwise tells the user to move the phone.
@@ -127,9 +130,44 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
                         summary: plan.summary,
                         completion: plan.completion)
         case .needsCurrentFloor:
-            coach.announce("Which floor are you on now?")                // Voice answer comes in M5
+            pendingGoal = goal                                    // Remember what they asked for
+            coach.announce("Which floor are you on now?")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in   // Wait for the question to finish
+                self?.listenForGoal()                             // Then listen for the answer
+            }
         case .cannotDo(let reason):
             coach.announce(reason)
+        }
+    }
+    
+    /// Starts listening for a spoken goal (tap again to stop early).
+    func listenForGoal() {
+        guard !listener.isListening else {                        // Already listening: stop now
+            listener.stop()
+            return
+        }
+        coach.stopSpeaking()                                      // Don't let the mic hear the app
+        coach.playCue()                                           // Beep = "talk now"
+        scanStatus = "Listening..."
+        listener.start { [weak self] heard in                     // Called when the user stops talking
+            self?.handleHeard(heard)
+        }
+    }
+
+    /// Runs the goal that was heard (or combines it with a pending floor question).
+    private func handleHeard(_ heard: String) {
+        guard !heard.isEmpty else {                               // Silence or error
+            pendingGoal = nil
+            scanStatus = "Didn't hear anything"
+            coach.announce("I didn't hear anything.")
+            return
+        }
+        scanStatus = "Heard: \(heard)"                            // Show what was understood
+        if let pending = pendingGoal {                            // This was the answer to "which floor?"
+            pendingGoal = nil
+            runGoal("\(pending) from \(heard)")                   // e.g. "floor 5 from 2"
+        } else {
+            runGoal(heard)                                        // A new goal
         }
     }
 

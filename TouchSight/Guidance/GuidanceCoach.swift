@@ -56,6 +56,15 @@ final class GuidanceCoach {
     func announce(_ text: String) {
         speaker.say(text)
     }
+    
+    func stopSpeaking() {
+        speaker.stop()
+    }
+
+    /// Short beep that tells a blind user "I'm listening now".
+    func playCue() {
+        beeper.play()
+    }
 
     // Called by press detection or the manual "Pressed" button
     func confirmPress() {

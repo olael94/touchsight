@@ -16,7 +16,7 @@ final class BeepPlayer {
     private let confirmBuffer: AVAudioPCMBuffer?  // Higher, longer "pressed" tone
 
     init() {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.duckOthers])  // Play even when the silent switch is on
+        try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .duckOthers])  // CHANGED: allow mic + loud speaker (still plays with silent switch on)
         try? AVAudioSession.sharedInstance().setActive(true)                                                // Turn audio on
 
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!  // CD-quality mono

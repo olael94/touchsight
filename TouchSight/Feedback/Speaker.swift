@@ -18,4 +18,9 @@ final class Speaker {
         utterance.rate = 0.55                           // A bit faster than default
         synthesizer.speak(utterance)                    // Speak
     }
+    
+    /// Silence immediately (so the mic doesn't hear the app talking).
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+    }
 }
