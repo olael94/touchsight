@@ -1,5 +1,7 @@
 # TouchSight
 
+🏆 **Winner, Technical Solution category, Ensign BUILD 2026 (Ensign College's first hackathon)**
+
 **A white cane gets you to the microwave. TouchSight gets your finger to the button.**
 
 TouchSight is an iOS app that helps blind and low-vision people press the right buttons on flat, non-tactile panels: microwaves, appliances, and elevators. It tracks the user's fingertip with the iPhone camera and LiDAR, and guides it to the exact button by voice, beeps, and haptics felt against the chest.
