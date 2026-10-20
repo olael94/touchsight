@@ -53,10 +53,16 @@ final class GuidanceCoach {
     }
     
     // Speak a one-off message (errors, questions)
-    func announce(_ text: String) {
-        speaker.say(text)
+    func announce(_ text: String, onFinished: (() -> Void)? = nil) {   // CHANGED: optional "when done"
+        speaker.say(text, onFinished: onFinished)
     }
     
+    // NEW: whole function below
+    /// Loads the voice early so the first sentence doesn't stutter.
+    func warmUpSpeech() {
+        speaker.warmUp()
+    }
+
     func stopSpeaking() {
         speaker.stop()
     }

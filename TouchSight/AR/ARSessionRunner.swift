@@ -69,6 +69,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
 
         session.run(config) // Start the Camera
         Task { _ = await listener.requestPermissions() }   // Ask for mic + speech permission at launch
+        coach.warmUpSpeech()                               // NEW: load the voice now, so the first question doesn't stutter
     }
     
     /// True if ARKit tracking is settled. Otherwise tells the user to move the phone.
@@ -139,8 +140,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
             guide(with: plan)                                             // CHANGED: moved into guide(with:)
         case .needsCurrentFloor:
             pendingGoal = goal                                            // Remember what they asked for
-            coach.announce("Which floor are you on now?")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in   // Wait for the question to finish
+            coach.announce("Which floor are you on now?") { [weak self] in   // CHANGED: listen only after the question ends
                 self?.listenForGoal()                                     // Then listen for the answer
             }
         case .notUnderstood:
@@ -201,8 +201,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         scanStatus = "What do you want to do?"                                  // Also show it on screen
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in  // Let Siri / Shortcuts release the audio
             try? AVAudioSession.sharedInstance().setActive(true)                // Take the speaker and mic back
-            self?.coach.announce("What do you want to do?")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {             // Let the question finish
+            self?.coach.announce("What do you want to do?") {                   // CHANGED: listen only after the question ends
                 self?.listenForGoal()
             }
         }
