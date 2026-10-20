@@ -38,7 +38,6 @@ nonisolated enum ClaudeVisionError: LocalizedError {
 nonisolated final class ClaudeVisionClient {
     private let apiKey: String                                                 // From Secrets.swift
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!  // Claude Messages API
-    static let acceptsPracticePanels = true                                       // DEBUG: true at home (paper or iPad), set to false at a real elevator
 
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -50,8 +49,8 @@ nonisolated final class ClaudeVisionClient {
     }
 
     /// Asks Claude whether a specific kind of panel is in the photo, and where.
-    func findPanel(in jpeg: Data, lookingFor target: String) async throws -> ClaudePanelAnswer {
-        let json = try await send(panelRequestBody(jpeg: jpeg, target: target))       // Same request code as findButtons
+    func findPanel(in jpeg: Data, lookingFor target: String, practiceMode: Bool) async throws -> ClaudePanelAnswer {   // CHANGED: added practiceMode
+        let json = try await send(panelRequestBody(jpeg: jpeg, target: target, practiceMode: practiceMode))  // CHANGED: pass practiceMode
         return try JSONDecoder().decode(ClaudePanelAnswer.self, from: json)           // Parse found, x, y
     }
 
@@ -123,7 +122,7 @@ nonisolated final class ClaudeVisionClient {
     }
     
     /// Builds the "is the panel here?" request: photo, what to look for, and the yes/no answer shape.
-    private func panelRequestBody(jpeg: Data, target: String) -> [String: Any] {
+    private func panelRequestBody(jpeg: Data, target: String, practiceMode: Bool) -> [String: Any] {   // CHANGED: added practiceMode
         let schema: [String: Any] = [                        // Shape of the answer
             "type": "object",
             "properties": [
@@ -138,7 +137,7 @@ nonisolated final class ClaudeVisionClient {
             "model": "claude-opus-5-5",                      // Same model as the button scan
             "max_tokens": 4000,
             "fallbacks": "default",                          // Retry on another model if refused
-            "system": Self.panelSystemPrompt + (Self.acceptsPracticePanels ? Self.practiceRule : ""),  // CHANGED: practice rule only when on                // Search rules
+            "system": Self.panelSystemPrompt + (practiceMode ? Self.practiceRule : ""),   // CHANGED: search rules, plus the practice rule when on
             "output_config": [
                 "effort": "low",                             // Fast yes/no check
                 "format": ["type": "json_schema", "schema": schema]
@@ -154,7 +153,7 @@ nonisolated final class ClaudeVisionClient {
     }
 
     // NEW: rules for the panel search
-    // DEBUG: added to the search rules only when acceptsPracticePanels is true
+    /// Added to the search rules only in practice mode (the on-screen switch).
     private static let practiceRule = """
 
     Practice mode is on: buttons drawn or printed on paper, or shown on a tablet screen, DO count as panels, even though other screens, posters, and signs do not.
@@ -175,8 +174,11 @@ nonisolated final class ClaudeVisionClient {
     x and y are fractions of the image width and height, measured from the top-left corner (0 to 1).
     label is the text printed on the button exactly as shown, such as "3", "0", "START", "STOP".
     Buttons without text: an up arrow is "UP", a down arrow is "DOWN".
-    Two unlabeled buttons stacked vertically on an elevator hall panel: the top one is "UP", the bottom one is "DOWN".
-    A single unlabeled call button is "CALL".
+    Only return buttons a person presses with a finger. Look closely before deciding something is a button:
+    - A key switch is a metal cylinder with a narrow keyhole slot in its center, often with a small light next to it. It is not a button; never return it.
+    - Indicator lights, screws, speaker grilles, card readers, and labels are not buttons.
+    Only when there are two pressable buttons stacked vertically on an elevator hall panel: the top one is "UP", the bottom one is "DOWN".
+    If the hall panel has only one pressable button, it is "CALL", even if a key switch is above or below it.
     Ignore text that is not on a button. If there are no buttons, return an empty list.
     """
 

@@ -13,6 +13,7 @@ import Observation
 /// Publishes a frames-per-second number for the debug overlay.
 @Observable
 final class ARSessionRunner: NSObject, ARSessionDelegate {
+    static let practiceModeKey = "practiceMode"   // NEW: where the on-screen practice switch is saved
     let session = ARSession()   // The Camera Session
     var fps: Int = 0            // Frames per second, shown on screen
     var hasLiDAR: Bool = false  // True if phone has LiDAR
@@ -107,10 +108,11 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
 
         Task {                                                               // Run async work
             do {
-                guard let jpeg = FrameJPEGEncoder.uprightJPEG(from: frame) else {  // Frame -> JPEG
+                guard let jpeg = FrameJPEGEncoder.uprightJPEG(from: frame, maxSide: 1920) else {  // CHANGED: full resolution so small details like key switches are clear
                     throw ClaudeVisionError.badResponse("Could not encode camera image")
                 }
                 let points = try await client.findButtons(in: jpeg)          // Ask Claude (waits for network)
+                saveDebugScan(jpeg, labels: points.map(\.label))          // DEBUG: keep the close-up scan photo
                 buttons = mapper.anchor(points, in: frame)                   // Place in 3D, show labels
                 scanStatus = "Claude found \(points.count), placed \(buttons.count)"  // Placed < found means depth was missing
                 if let goal = goalAfterScan, !buttons.isEmpty {       // A goal was waiting for this scan
@@ -258,7 +260,8 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         try? FileManager.default.removeItem(at: debugPhotoFolder)        // DEBUG: keep only this search's photos
         approachGuide.reset(now: CACurrentMediaTime(), targetName: searchKind.spokenName)  // names the target
         scanStatus = "Looking for \(searchKind.spokenName)..."
-        coach.announce("Looking for \(searchKind.spokenName). Turn slowly to your right. I'll tell you when to stop.")  // CHANGED
+        let modeIntro = UserDefaults.standard.bool(forKey: Self.practiceModeKey) ? "Practice mode. " : ""   // NEW: say the mode when practicing
+        coach.announce("\(modeIntro)Looking for \(searchKind.spokenName). Turn slowly to your right. I'll tell you when to stop.")  // CHANGED: mode first
     }
 
     // NEW: whole function below (replaces findPanel)
@@ -306,7 +309,8 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         var failed = snapshot == nil                                      // No photo or depth this frame
         if let snapshot {
             do {
-                let answer = try await claudeClient.findPanel(in: snapshot.jpeg, lookingFor: kind.searchDescription)
+                let answer = try await claudeClient.findPanel(in: snapshot.jpeg, lookingFor: kind.searchDescription,
+                                                               practiceMode: UserDefaults.standard.bool(forKey: Self.practiceModeKey))  // CHANGED: read the on-screen switch
                 if answer.found {
                     point = snapshot.worldPoint(atUpright: CGPoint(x: answer.x, y: answer.y))  // Where it was in that photo
                 }
@@ -329,6 +333,15 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         if failed { searchHadError = true }
         guard lockedPanel == nil, let point else { return }              // Already locked, or not in this photo
         lockedPanel = point                                               // From now on, guide toward this spot
+    }
+
+    // DEBUG: whole function below (remove after testing)
+    /// Saves the close-up AI Scan photo named with the labels Claude read, e.g. "scan-UP-DOWN.jpg".
+    private func saveDebugScan(_ jpeg: Data, labels: [String]) {
+        try? FileManager.default.createDirectory(at: debugPhotoFolder, withIntermediateDirectories: true)  // Same folder as the search photos
+        let readable = labels.isEmpty ? "none" : labels.joined(separator: "-")                               // e.g. "UP-DOWN" or "none"
+        let name = "scan-" + readable.replacingOccurrences(of: "/", with: "_") + ".jpg"                      // "/" isn't allowed in file names
+        try? jpeg.write(to: debugPhotoFolder.appending(path: name))                                          // The exact full-resolution JPEG sent
     }
 
     // DEBUG: whole property below (remove after testing)

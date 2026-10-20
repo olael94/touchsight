@@ -12,6 +12,7 @@ struct ContentView: View {
     //@State React comparison = useState
     @State private var arRunner = ARSessionRunner()  // Create and keep the AR session alive
     private let launchRequest = LaunchRequest.shared   // Set by the Action button / Siri
+    @AppStorage(ARSessionRunner.practiceModeKey) private var practiceMode = false   // NEW: on-screen switch, saved between launches
 
     var body: some View {
         // React comparison = stacking layers with positon: absolute
@@ -28,6 +29,7 @@ struct ContentView: View {
             // whole VStack
             VStack(spacing: 8) {                                  // Bottom controls
                 Spacer()                                          // Push to the bottom
+                practiceModeCard                                  // NEW: practice / real mode switch
                 if !arRunner.scanStatus.isEmpty {                 // Only when there is a message
                     Text(arRunner.scanStatus)                     // "Asking Claude...", "Claude found 12 buttons"
                         .font(.callout.bold())
@@ -84,6 +86,32 @@ struct ContentView: View {
                       step, instruction.spokenText, offset.dx * 100, offset.dy * 100, offset.dz * 100)
     }
     
+    // CHANGED: whole property below (segmented control instead of a switch)
+    /// Practice / Real mode picker, lined up exactly above the AI Scan button.
+    private var practiceModeCard: some View {
+        HStack(spacing: 12) {                                                            // Same layout as the OCR / AI Scan row
+            Color.clear                                                                  // Empty left half, above OCR Scan
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Detection mode", selection: $practiceMode) {                    // Apple's control for choosing a mode
+                    Text("Practice").tag(true)
+                    Text("Real").tag(false)
+                }
+                .pickerStyle(.segmented)                                                 // Two side-by-side segments
+
+                Label(practiceMode ? "Practice mode: paper and iPad panels count."
+                                   : "Real mode: only real panels count.",
+                      systemImage: practiceMode ? "pencil.and.outline" : "building.2.fill")  // Icon + words, not just color
+                    .font(.caption.bold())
+                    .foregroundStyle(practiceMode ? .orange : .green)                    // Orange = practice, green = real
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)                             // Fill the right half
+            .padding(10)
+            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))   // Same see-through box as the debug info
+        }
+        .fixedSize(horizontal: false, vertical: true)                                    // Only as tall as the box
+        .padding(.horizontal)                                                            // Same side margins as the scan buttons
+    }
+
     /// One big rounded scan button.
     private func scanButton(title: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(title, action: action)                                   // Tappable button
