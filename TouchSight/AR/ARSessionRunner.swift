@@ -13,7 +13,8 @@ import Observation
 /// Publishes a frames-per-second number for the debug overlay.
 @Observable
 final class ARSessionRunner: NSObject, ARSessionDelegate {
-    static let practiceModeKey = "practiceMode"   // NEW: where the on-screen practice switch is saved
+    static let practiceModeKey = "practiceMode"   // Where the on-screen practice switch is saved
+    static let elevatorWaitTime: Double = 60       // Seconds to look for the floor buttons before asking for the Action button
     let session = ARSession()   // The Camera Session
     var fps: Int = 0            // Frames per second, shown on screen
     var hasLiDAR: Bool = false  // True if phone has LiDAR
@@ -34,6 +35,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
     @ObservationIgnored private var pendingGoal: String?   // Goal waiting for "which floor are you on?"
     @ObservationIgnored private var goalAfterScan: String?  // Goal spoken before any scan, run after scanning
+    @ObservationIgnored private var floorGoalAfterCall: String?     // Floor to press once inside the elevator
     @ObservationIgnored private let finderQueue = DispatchQueue(label: "touchsight.finder")    // Its own background thread
     @ObservationIgnored private var lastFinderRun: CFTimeInterval = 0                          // Throttle to ~3 per second
     @ObservationIgnored private var panelSearch = PanelSearch()                                // photo every 35 degrees of turning
@@ -55,6 +57,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     override init() {
         super.init()
         session.delegate = self     //Send camera frames to this class
+        coach.onSequenceFinished = { [weak self] in self?.sequenceFinished() }   // Hear when the call button is done
     }
 
     func start() {
@@ -186,6 +189,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
             coach.announce("Some buttons are missing. Please scan again.")
             return
         }
+        floorGoalAfterCall = plan.followUpGoal                            // "take me to floor 5" after calling the elevator
         let cameraPosition = SIMD3<Float>(frame.camera.transform.columns.3.x,   // Where the user is now
                                           frame.camera.transform.columns.3.y,
                                           frame.camera.transform.columns.3.z)
@@ -197,7 +201,18 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     
     /// Called when launched from the Action button or Siri: ask, then listen.
     func handleLaunch() {
-        buttons = []                                                      // New launch = new panel, start fresh
+        buttons = []                                                      // Launch = new panel, start fresh
+        if let floorGoal = floorGoalAfterCall {                           // User is inside the elevator now
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in  // Let Siri / Shortcuts release the audio
+                try? AVAudioSession.sharedInstance().setActive(true)
+                self?.coach.announce("Finding the floor buttons.") {
+                    self?.startFloorSearch(for: floorGoal, timeLimit: nil)  // Normal search, one full turn
+                }
+            }
+            return
+        }
+        debugPhotoNumber = 0                                              // DEBUG: a new run, start numbering again
+        try? FileManager.default.removeItem(at: debugPhotoFolder)        // DEBUG: keep only this run's photos
         scanStatus = "What do you want to do?"                                  // Also show it on screen
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in  // Let Siri / Shortcuts release the audio
             try? AVAudioSession.sharedInstance().setActive(true)                // Take the speaker and mic back
@@ -243,22 +258,22 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         goalAfterScan = nil
         lockedPanel = nil                                                 // Forget the panel
         searchID += 1                                                     // Ignore answers still on the way
+        floorGoalAfterCall = nil                                          // No automatic floor search
         coach.stop()
     }
     
     /// Starts searching for the panel and guiding the user toward it.
-    func startApproach(for goal: String) {                                // Takes the goal
+    func startApproach(for goal: String, kind: PanelKind? = nil, timeLimit: Double? = nil) {   // CHANGED: optional target and time limit
         isApproaching = true
-        searchKind = PanelKind(goal: goal)                                // Elevator, appliance, or any
+        searchKind = kind ?? PanelKind(goal: goal)                        // Elevator, appliance, any, or floor buttons
         lockedPanel = nil                                                 // Nothing confirmed yet
         pendingChecks = 0
         searchHadError = false
         searchID += 1                                                     // A fresh search
-        panelSearch.reset()
-        debugPhotoNumber = 0                                              // DEBUG: start numbering again
-        try? FileManager.default.removeItem(at: debugPhotoFolder)        // DEBUG: keep only this search's photos
+        panelSearch.reset(now: CACurrentMediaTime(), timeLimit: timeLimit)   // Waiting mode when there is a limit
         approachGuide.reset(now: CACurrentMediaTime(), targetName: searchKind.spokenName)  // names the target
         scanStatus = "Looking for \(searchKind.spokenName)..."
+        guard timeLimit == nil else { return }                            // Waiting quietly, the user already heard what to do
         let modeIntro = UserDefaults.standard.bool(forKey: Self.practiceModeKey) ? "Practice mode. " : ""   // NEW: say the mode when practicing
         coach.announce("\(modeIntro)Looking for \(searchKind.spokenName). Turn slowly to your right. I'll tell you when to stop.")  // CHANGED: mode first
     }
@@ -276,7 +291,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
             return
         }
 
-        if panelSearch.hasTurnedFully {                                   // CHANGED: looked all around, no more photos
+        if panelSearch.isFinished(now: now) {                             // Full turn, or waited too long around
             if pendingChecks == 0 { searchFailed() }                      // Every answer is in, none found it
         } else if panelSearch.update(heading: PanelSearch.heading(of: frame.camera.transform), now: now) {  // CHANGED: turned 35 degrees or waited 3 s
             checkForPanel(in: frame)
@@ -358,11 +373,29 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     }
 
     // NEW: whole function below
+    /// After the last button of a sequence. If it was an elevator call, start looking for the floor buttons.
+    private func sequenceFinished() {
+        guard let floorGoal = floorGoalAfterCall else { return }         // Not an elevator call: nothing more to do
+        coach.announce("When the doors open, step inside and turn to face the buttons. I will find the floor buttons for you.") { [weak self] in
+            self?.startFloorSearch(for: floorGoal, timeLimit: Self.elevatorWaitTime)   // Quiet search while the user waits
+        }
+    }
+
+    // NEW: whole function below
+    /// Looks for the floor buttons, then plans the floor goal once they are scanned.
+    private func startFloorSearch(for floorGoal: String, timeLimit: Double?) {
+        buttons = []                                                      // The call panel is done
+        goalAfterScan = floorGoal                                         // Runs after the floor panel is scanned
+        startApproach(for: floorGoal, kind: .floorButtons, timeLimit: timeLimit)
+    }
+
     /// A full turn found nothing: say so honestly instead of guessing.
     private func searchFailed() {
         isApproaching = false
         goalAfterScan = nil
-        let message = searchHadError
+        let message = panelSearch.isWaiting                               // NEW: elevator took a while
+            ? "Press the Action button when you are inside the elevator, and I will find the floor buttons."
+            : searchHadError
             ? "I couldn't check the camera view. Check the internet connection, then press the Action button again."
             : "I couldn't find \(searchKind.spokenName). Try moving closer, then press the Action button again."
         scanStatus = message

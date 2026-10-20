@@ -25,6 +25,7 @@ final class GuidanceCoach {
     @ObservationIgnored private let speaker = Speaker()
     @ObservationIgnored private let beeper = BeepPlayer()
     @ObservationIgnored private let haptics = HapticPlayer()          // Taps felt against the chest
+    @ObservationIgnored var onSequenceFinished: (() -> Void)?        // Called after the last button of a sequence
     @ObservationIgnored private var candidate: GuidanceInstruction?   // Instruction waiting to become stable
     @ObservationIgnored private var candidateCount = 0                // How many updates in a row it held
     @ObservationIgnored private var lastSpoken: GuidanceInstruction?  // Last word said
@@ -80,10 +81,13 @@ final class GuidanceCoach {
         stepIndex += 1                               // Move to the next button
 
         guard let next = target else {               // No more steps
-            say("Pressed. \(completion)", pause: 0)  // e.g. "Microwave set for 2 minutes."
+            speaker.say("Pressed. \(completion)") { [weak self] in   // CHANGED: e.g. "Microwave set for 2 minutes."
+                self?.onSequenceFinished?()          // Tell the runner once the sentence ends
+            }
             stop()
             return
         }
+        
         let nextWord = next.id == pressed.id ? "Again" : "Next"   // Same button twice ("0, 0")
         resetForNewTarget()
         pressDetector.requireRelease()               // Must lift before the next press counts

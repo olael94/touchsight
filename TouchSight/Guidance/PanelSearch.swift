@@ -18,10 +18,20 @@ nonisolated struct PanelSearch {
     private var lastHeading: Float?                  // Heading last frame
     private var lastPhotoTime: Double = 0            // NEW: when the last photo was taken
     private var turned: Float = 0                    // Total turn so far (signed, so hand shake cancels out)
+    private var startTime: Double = 0                // When this search started
+    private var timeLimit: Double?                   // Waiting mode: stop after this many seconds instead of one turn
 
-    var hasTurnedFully: Bool { abs(turned) >= 2 * .pi }   // Looked all the way around
+    var isWaiting: Bool { timeLimit != nil }         // Waiting for the elevator, not turning in place
 
-    mutating func reset() {
+    /// True when the search should give up: one full turn, or the time limit while waiting.
+    func isFinished(now: Double) -> Bool {
+        if let timeLimit { return now - startTime >= timeLimit }   // Waiting: the user may stand still for a while
+        return abs(turned) >= 2 * .pi                               // Normal: looked all the way around
+    }
+
+    mutating func reset(now: Double, timeLimit: Double? = nil) {   // Start time and optional limit
+        startTime = now                              // NEW
+        self.timeLimit = timeLimit                   // NEW
         lastPhotoHeading = nil
         lastHeading = nil
         lastPhotoTime = 0                            // NEW

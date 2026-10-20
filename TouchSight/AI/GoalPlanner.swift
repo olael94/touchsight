@@ -12,6 +12,7 @@ nonisolated struct GoalPlan {
     let sequence: [String]  // e.g. ["2", "0", "0", "START"]
     let summary: String     // Said before guiding
     let completion: String  // Said when done
+    var followUpGoal: String? = nil   // After calling the elevator, e.g. "take me to floor 5"
 }
 
 nonisolated enum GoalPlanResult {
@@ -79,12 +80,14 @@ nonisolated enum GoalPlanner {
         if labels.contains(direction) {                                       // Two-button panel
             return .plan(GoalPlan(sequence: [direction],
                                   summary: "\(route) Going \(direction.lowercased()). I will guide you to the \(direction.lowercased()) button.",
-                                  completion: "Elevator called."))
+                                  completion: "Elevator called.",
+                                  followUpGoal: "take me to \(destination.spokenName)"))   // Then the floor inside
         }
         if labels.contains("CALL") {                                          // Single-button panel
             return .plan(GoalPlan(sequence: ["CALL"],
                                   summary: "\(route) One call button. I will guide you to it.",
-                                  completion: "Elevator called."))
+                                  completion: "Elevator called.",
+                                  followUpGoal: "take me to \(destination.spokenName)"))   // Then the floor inside
         }
         return .cannotDo("This panel has no \(direction.lowercased()) button.")
     }
