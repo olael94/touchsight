@@ -180,6 +180,7 @@ nonisolated final class ClaudeVisionClient {
     Only when there are two pressable buttons stacked vertically on an elevator hall panel: the top one is "UP", the bottom one is "DOWN".
     If the hall panel has only one pressable button, it is "CALL", even if a key switch is above or below it.
     Ignore text that is not on a button. If there are no buttons, return an empty list.
+    x and y must be the center of the pressable button itself. If a floor number or letter is printed on a label beside the button (left, right, above, or below), use that text as the button's label, but return the button's center, never the label's center.
     """
 
     // Only the response fields we need
