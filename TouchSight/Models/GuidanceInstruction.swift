@@ -5,8 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
-
 /// One spoken direction for the finger.
 nonisolated enum GuidanceInstruction: Equatable {  // Equatable = can compare with ==
     case left, right, up, down, forward, onTarget

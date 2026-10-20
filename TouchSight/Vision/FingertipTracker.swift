@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import Vision  // Apple's on-device image analysis
 
 /// Finds the index fingertip in a camera image.

@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import AVFoundation  // Audio engine
 
 /// Plays a short beep. Called faster as the finger gets closer (parking sensor).

@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import simd  // 3D vector math
 
 /// The panel's own directions: right, up, and out toward the user.

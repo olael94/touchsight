@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/9/26.
 //
 
-import Foundation
 import SwiftUI  // Apple's UI framework
 
 /// Main screen: camera with debug info on top.

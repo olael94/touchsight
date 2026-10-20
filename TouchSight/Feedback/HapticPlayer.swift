@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import UIKit  // Haptic feedback generators
 
 /// Taps felt against the chest: stronger as the finger gets closer, a distinct buzz on each press.

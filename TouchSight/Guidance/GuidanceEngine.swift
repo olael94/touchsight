@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import simd  // 3D vector math
 
 /// How far the finger still has to move, in the panel's directions (meters).

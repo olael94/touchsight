@@ -92,7 +92,7 @@ TouchSight/
 
 ## AI tools used (disclosure)
 
-Ensign BUILD asksed teams to be transparent about AI tools. TouchSight used:
+Ensign BUILD asked teams to be transparent about AI tools. TouchSight used:
 
 - **Claude Code (Anthropic, model Claude Opus 5.5)** as a coding mentor during the event. We planned the milestones, explained Swift, ARKit, and Vision concepts, provided code snippets, reviewed and test-compiled the code, and helped debug. I typed about 60% of the code to learn Swift; Claude Code applied some fixes and refactors directly when asked, and drafted this README.
 - **Claude API (`claude-opus-5-5`)** inside the app, for button detection from photos and for planning goals the offline rules do not understand.

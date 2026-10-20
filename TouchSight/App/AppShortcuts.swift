@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import AppIntents  // Siri, Shortcuts, Action button
 
 /// Makes the intent available to Siri and the Action button automatically (no setup in Shortcuts).

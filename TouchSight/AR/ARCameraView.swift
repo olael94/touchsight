@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/9/26.
 //
 
-import Foundation
 import ARKit    // AR camera views
 import SwiftUI  // Apple's UI framework
 

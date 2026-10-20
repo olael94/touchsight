@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/9/26.
 //
 
-import Foundation
 import SwiftUI  // Apple's UI framework
 
 /// Developer info drawn on top of the camera.

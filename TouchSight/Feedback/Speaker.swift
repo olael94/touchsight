@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import AVFoundation  // Text-to-speech
 
 /// Speaks short directions. New words cut off old ones so it never lags behind.

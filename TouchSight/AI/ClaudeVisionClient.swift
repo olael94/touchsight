@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import Foundation  // URLSession, JSON
 
 /// One button Claude found: its label and center point in the upright photo (0 to 1).

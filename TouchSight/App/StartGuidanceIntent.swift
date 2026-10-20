@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import AppIntents  // Siri, Shortcuts, Action button
 
 /// The action iOS runs when the user presses the Action button or asks Siri.

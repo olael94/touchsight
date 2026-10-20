@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import ARKit    // ARSession
 import SwiftUI  // Apple's UI framework
 

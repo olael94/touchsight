@@ -5,7 +5,6 @@
 //  Created by Oliver Rivera on 10/10/26.
 //
 
-import Foundation
 import Observation  // @Observable
 import QuartzCore   // CACurrentMediaTime
 import simd         // 3D vectors
