@@ -87,6 +87,7 @@ nonisolated final class ClaudeGoalClient {
     You convert a blind user's spoken goal into an ordered list of buttons to press on a physical panel (microwave, elevator, appliance).
     Only use labels from AVAILABLE_BUTTONS, spelled exactly as given.
     The goal comes from speech recognition, so it may contain small transcription mistakes. Use common sense.
+    Elevator buttons often use letters for floors: L = lobby, G = ground floor, M or ★M = main floor, LL = lower lobby, B or B1 = basement, P or P1 = parking, PH = penthouse, R = roof. When you choose a letter button, say what it means in spoken_summary, such as "I will guide you to M, the main floor."
     spoken_summary is one short sentence read aloud before guiding, such as "I will guide you to press 1, 3, 0, then START."
     done_message is one short sentence read aloud when finished, such as "Microwave set for 1 minute 30 seconds."
     If the goal is impossible with these buttons, return an empty sequence and a short spoken explanation in error. Otherwise error is an empty string.
