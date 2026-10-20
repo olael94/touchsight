@@ -33,10 +33,15 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     @ObservationIgnored private var isProcessingFrame = false  // true while Vision is busy
     @ObservationIgnored private var pendingGoal: String?   // Goal waiting for "which floor are you on?"
     @ObservationIgnored private var goalAfterScan: String?  // Goal spoken before any scan, run after scanning
-    @ObservationIgnored private let panelFinder = PanelFinder()                                // Rectangle detector
     @ObservationIgnored private let finderQueue = DispatchQueue(label: "touchsight.finder")    // Its own background thread
-    @ObservationIgnored private var finderBusy = false                                         // Skip frames while busy
     @ObservationIgnored private var lastFinderRun: CFTimeInterval = 0                          // Throttle to ~3 per second
+    @ObservationIgnored private var panelSearch = PanelSearch()                                // photo every 35 degrees of turning
+    @ObservationIgnored private var searchKind = PanelKind.any                                 // what we're looking for
+    @ObservationIgnored private var lockedPanel: SIMD3<Float>?                                 // confirmed panel, fixed in the room
+    @ObservationIgnored private var pendingChecks = 0                                          // photos Claude hasn't answered yet
+    @ObservationIgnored private var searchHadError = false                                     // a check failed (network?)
+    @ObservationIgnored private var searchID = 0                                               // ignores answers from an older search
+    @ObservationIgnored private var debugPhotoNumber = 0                                       // DEBUG: numbers the saved search photos
     @ObservationIgnored private var approachGuide = ApproachGuide()                            // Approach logic
     @ObservationIgnored private var fingertipWorldPoint: SIMD3<Float>?  // Smoothed 3D fingertip
     @ObservationIgnored private let buttonMapper = ButtonMapper()  // NEW: OCR + 3D placement
@@ -124,7 +129,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     func runGoal(_ goal: String) {
         guard !buttons.isEmpty else {                                     // Need a scan first
             goalAfterScan = goal                                          // Remember the goal
-            startApproach()                                               // CHANGED: find + walk to the panel first
+            startApproach(for: goal)                                      // The goal says what to look for
             return
         }
         switch GoalPlanner.plan(goal: goal, availableLabels: buttons.map(\.label)) {
@@ -235,32 +240,121 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     func stopGuidance() {
         isApproaching = false                                             // Also cancel approach
         goalAfterScan = nil
+        lockedPanel = nil                                                 // Forget the panel
+        searchID += 1                                                     // Ignore answers still on the way
         coach.stop()
     }
     
     /// Starts searching for the panel and guiding the user toward it.
-    func startApproach() {
+    func startApproach(for goal: String) {                                // Takes the goal
         isApproaching = true
-        approachGuide.reset(now: CACurrentMediaTime())
-        scanStatus = "Looking for the panel..."
-        coach.announce("Looking for the panel. Turn slowly.")
+        searchKind = PanelKind(goal: goal)                                // Elevator, appliance, or any
+        lockedPanel = nil                                                 // Nothing confirmed yet
+        pendingChecks = 0
+        searchHadError = false
+        searchID += 1                                                     // A fresh search
+        panelSearch.reset()
+        debugPhotoNumber = 0                                              // DEBUG: start numbering again
+        try? FileManager.default.removeItem(at: debugPhotoFolder)        // DEBUG: keep only this search's photos
+        approachGuide.reset(now: CACurrentMediaTime(), targetName: searchKind.spokenName)  // names the target
+        scanStatus = "Looking for \(searchKind.spokenName)..."
+        coach.announce("Looking for \(searchKind.spokenName). Turn slowly to your right. I'll tell you when to stop.")  // CHANGED
     }
 
-    /// Runs rectangle detection in the background, about 3 times per second.
-    private func findPanel(in frame: ARFrame) {
+    // NEW: whole function below (replaces findPanel)
+    /// Every frame while approaching: take search photos until the panel is confirmed, then guide toward it.
+    private func updateApproach(with frame: ARFrame) {
+        guard case .normal = frame.camera.trackingState else { return }  // Heading and 3D points need settled tracking
         let now = CACurrentMediaTime()
-        guard !finderBusy, now - lastFinderRun > 0.3 else { return }   // Busy or too soon
-        finderBusy = true
-        lastFinderRun = now
-        let finder = panelFinder
 
-        finderQueue.async {                                             // Background thread
-            let sighting = finder.findPanel(in: frame)                  // Rectangle + LiDAR distance
-            Task { @MainActor in                                        // Back to main thread
-                self.finderBusy = false
-                self.handleSighting(sighting)
+        if let panel = lockedPanel {                                      // Confirmed: guide from its fixed 3D point
+            guard now - lastFinderRun > 0.3 else { return }               // About 3 updates per second
+            lastFinderRun = now
+            handleSighting(PanelSearch.sighting(of: panel, from: frame.camera.transform))
+            return
+        }
+
+        if panelSearch.hasTurnedFully {                                   // CHANGED: looked all around, no more photos
+            if pendingChecks == 0 { searchFailed() }                      // Every answer is in, none found it
+        } else if panelSearch.update(heading: PanelSearch.heading(of: frame.camera.transform), now: now) {  // CHANGED: turned 35 degrees or waited 3 s
+            checkForPanel(in: frame)
+        }
+    }
+
+    // NEW: whole function below
+    /// Saves a search photo and asks Claude if the panel is in it. The user keeps turning meanwhile.
+    private func checkForPanel(in frame: ARFrame) {
+        pendingChecks += 1
+        coach.playCue()                                                   // Soft tick: "still looking"
+        let id = searchID
+        let kind = searchKind
+        debugPhotoNumber += 1                                             // DEBUG: number photos in the order they're taken
+        let number = debugPhotoNumber
+
+        finderQueue.async {                                               // JPEG + depth copy off the main thread
+            let snapshot = FrameSnapshot(frame: frame)                    // Photo, depth, and camera from this moment
+            Task { @MainActor in
+                await self.askClaude(about: snapshot, kind: kind, searchID: id, photoNumber: number)  // DEBUG: added photoNumber
             }
         }
+    }
+
+    // NEW: whole function below
+    /// Sends one search photo to Claude and locks the panel if it's there.
+    private func askClaude(about snapshot: FrameSnapshot?, kind: PanelKind, searchID id: Int, photoNumber: Int) async {  // DEBUG: added photoNumber
+        var point: SIMD3<Float>?                                          // Panel in 3D, if found
+        var failed = snapshot == nil                                      // No photo or depth this frame
+        if let snapshot {
+            do {
+                let answer = try await claudeClient.findPanel(in: snapshot.jpeg, lookingFor: kind.searchDescription)
+                if answer.found {
+                    point = snapshot.worldPoint(atUpright: CGPoint(x: answer.x, y: answer.y))  // Where it was in that photo
+                }
+                scanStatus = answer.found                                 // NEW (debug): show what Claude said
+                    ? (point == nil ? "Claude: found, but no depth there" : String(format: "Claude: found at %.2f, %.2f", answer.x, answer.y))
+                    : "Claude: not in this photo"
+                let result = answer.found                                 // DEBUG: answer for the file name
+                    ? String(format: "found-%.2f-%.2f%@", answer.x, answer.y, point == nil ? "-nodepth" : "")
+                    : "no"
+                saveDebugPhoto(snapshot.jpeg, number: photoNumber, result: result)  // DEBUG
+            } catch {
+                failed = true                                             // Network or API problem
+                scanStatus = "Check failed: \(error.localizedDescription)"  // NEW (debug): show the error
+                saveDebugPhoto(snapshot.jpeg, number: photoNumber, result: "error")  // DEBUG
+            }
+        }
+
+        guard id == searchID, isApproaching else { return }              // Search stopped or restarted meanwhile
+        pendingChecks -= 1
+        if failed { searchHadError = true }
+        guard lockedPanel == nil, let point else { return }              // Already locked, or not in this photo
+        lockedPanel = point                                               // From now on, guide toward this spot
+    }
+
+    // DEBUG: whole property below (remove after testing)
+    /// Folder in the app's Documents where search photos are saved.
+    private var debugPhotoFolder: URL {
+        URL.documentsDirectory.appending(path: "SearchPhotos")
+    }
+
+    // DEBUG: whole function below (remove after testing)
+    /// Saves a search photo named with Claude's answer, e.g. "photo-04-no.jpg", so we can see what Claude saw.
+    private func saveDebugPhoto(_ jpeg: Data, number: Int, result: String) {
+        try? FileManager.default.createDirectory(at: debugPhotoFolder, withIntermediateDirectories: true)  // Make the folder once
+        let name = String(format: "photo-%02d-%@.jpg", number, result)                                       // e.g. photo-04-no.jpg
+        try? jpeg.write(to: debugPhotoFolder.appending(path: name))                                          // Save the exact JPEG sent
+    }
+
+    // NEW: whole function below
+    /// A full turn found nothing: say so honestly instead of guessing.
+    private func searchFailed() {
+        isApproaching = false
+        goalAfterScan = nil
+        let message = searchHadError
+            ? "I couldn't check the camera view. Check the internet connection, then press the Action button again."
+            : "I couldn't find \(searchKind.spokenName). Try moving closer, then press the Action button again."
+        scanStatus = message
+        coach.announce(message)
     }
 
     /// Speaks / beeps for one sighting, and scans when the user arrives.
@@ -297,7 +391,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         }
         
         trackFingertip(in: frame)                           // Start tracking finger
-        if isApproaching { findPanel(in: frame) }           // Search for the panel while approaching
+        if isApproaching { updateApproach(with: frame) }    // Search photos, then guide to the locked panel
     }
     
     // Run hand detection in the background, skip frames while busy

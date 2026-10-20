@@ -14,6 +14,13 @@ nonisolated struct ClaudeButtonPoint: Decodable {
     let y: Double      // Fraction of image height from the top
 }
 
+/// Claude's answer to "is the panel in this photo?", with its center if it is.
+nonisolated struct ClaudePanelAnswer: Decodable {
+    let found: Bool  // True only if the panel is clearly visible
+    let x: Double    // Fraction of image width from the left (0 if not found)
+    let y: Double    // Fraction of image height from the top (0 if not found)
+}
+
 /// Errors with a readable message for the status text.
 nonisolated enum ClaudeVisionError: LocalizedError {
     case badResponse(String)  // HTTP error or unexpected response
@@ -31,12 +38,26 @@ nonisolated enum ClaudeVisionError: LocalizedError {
 nonisolated final class ClaudeVisionClient {
     private let apiKey: String                                                 // From Secrets.swift
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!  // Claude Messages API
+    static let acceptsPracticePanels = true                                       // DEBUG: true at home (paper or iPad), set to false at a real elevator
 
     init(apiKey: String) {
         self.apiKey = apiKey
     }
 
     func findButtons(in jpeg: Data) async throws -> [ClaudeButtonPoint] {
+        let json = try await send(requestBody(jpeg: jpeg))                            // CHANGED: shared request code
+        return try JSONDecoder().decode(ButtonList.self, from: json).buttons          // Parse our button list
+    }
+
+    /// Asks Claude whether a specific kind of panel is in the photo, and where.
+    func findPanel(in jpeg: Data, lookingFor target: String) async throws -> ClaudePanelAnswer {
+        let json = try await send(panelRequestBody(jpeg: jpeg, target: target))       // Same request code as findButtons
+        return try JSONDecoder().decode(ClaudePanelAnswer.self, from: json)           // Parse found, x, y
+    }
+
+    // NEW: the networking code from findButtons moved here so both calls share it
+    /// Sends one request to Claude and returns the JSON text of its answer.
+    private func send(_ body: [String: Any]) async throws -> Data {
         var request = URLRequest(url: endpoint)                                       // HTTP request
         request.httpMethod = "POST"
         request.timeoutInterval = 60                                                  // Give up after 60 s
@@ -44,7 +65,7 @@ nonisolated final class ClaudeVisionClient {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")                     // Authentication
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")       // API version
         request.setValue("server-side-fallback-2026-07-01", forHTTPHeaderField: "anthropic-beta")  // Enables refusal fallback
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody(jpeg: jpeg))     // Body as JSON
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)          // CHANGED: body passed in
 
         let (data, response) = try await URLSession.shared.data(for: request)        // Send and wait (doesn't block the UI)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0              // HTTP status
@@ -61,7 +82,7 @@ nonisolated final class ClaudeVisionClient {
               let json = text.data(using: .utf8) else {
             throw ClaudeVisionError.badResponse("No text in Claude's response")
         }
-        return try decoder.decode(ButtonList.self, from: json).buttons                // Parse our button list
+        return json                                                                   // CHANGED: caller parses it
     }
 
     /// Builds the request: model, prompt, image, and the JSON shape Claude must return.
@@ -100,6 +121,52 @@ nonisolated final class ClaudeVisionClient {
             ]]
         ]
     }
+    
+    /// Builds the "is the panel here?" request: photo, what to look for, and the yes/no answer shape.
+    private func panelRequestBody(jpeg: Data, target: String) -> [String: Any] {
+        let schema: [String: Any] = [                        // Shape of the answer
+            "type": "object",
+            "properties": [
+                "found": ["type": "boolean"],
+                "x": ["type": "number"],
+                "y": ["type": "number"]
+            ],
+            "required": ["found", "x", "y"],
+            "additionalProperties": false
+        ]
+        return [
+            "model": "claude-opus-5-5",                      // Same model as the button scan
+            "max_tokens": 4000,
+            "fallbacks": "default",                          // Retry on another model if refused
+            "system": Self.panelSystemPrompt + (Self.acceptsPracticePanels ? Self.practiceRule : ""),  // CHANGED: practice rule only when on                // Search rules
+            "output_config": [
+                "effort": "low",                             // Fast yes/no check
+                "format": ["type": "json_schema", "schema": schema]
+            ],
+            "messages": [[
+                "role": "user",
+                "content": [
+                    ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": jpeg.base64EncodedString()]],  // The photo
+                    ["type": "text", "text": "Look for: \(target)"]                                                                     // What counts
+                ]
+            ]]
+        ]
+    }
+
+    // NEW: rules for the panel search
+    // DEBUG: added to the search rules only when acceptsPracticePanels is true
+    private static let practiceRule = """
+
+    Practice mode is on: buttons drawn or printed on paper, or shown on a tablet screen, DO count as panels, even though other screens, posters, and signs do not.
+    """
+
+    private static let panelSystemPrompt = """
+    You help a blind user find a specific control panel by looking through their phone camera.
+    Set found to true only if you can clearly see the requested panel in the photo. If you are unsure, set found to false: a wrong answer sends a blind person the wrong way.
+    Posters, signs, screens, doors, windows, light switches, and wall outlets are not panels.
+    If found, x and y are the center of the panel as fractions of the image width and height, measured from the top-left corner (0 to 1). If not found, set x and y to 0.
+    """
+
 
     // Rules for Claude, including the elevator call button rules (CLAUDE.md 5.11)
     private static let systemPrompt = """

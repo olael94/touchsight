@@ -14,7 +14,11 @@ nonisolated enum DepthSampler {
     /// Closest valid depth (meters) in a small square around an image point.
     static func depth(at imagePoint: CGPoint, in frame: ARFrame, window: Int = 2) -> Float? {
         guard let depthMap = frame.sceneDepth?.depthMap else { return nil }  // No LiDAR data this frame
+        return depth(at: imagePoint, in: depthMap, window: window)           // Shared with saved snapshots
+    }
 
+    /// Closest valid depth (meters) in a small square around an image point of this depth map.
+    static func depth(at imagePoint: CGPoint, in depthMap: CVPixelBuffer, window: Int = 2) -> Float? {
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)                // Lock memory before reading
         defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }    // Always unlock when done
 
@@ -43,7 +47,12 @@ nonisolated enum DepthSampler {
 
     /// Image point + depth -> 3D point in the room (meters).
     static func worldPoint(at imagePoint: CGPoint, depth: Float, in frame: ARFrame) -> SIMD3<Float> {
-        let camera = frame.camera
+        worldPoint(at: imagePoint, depth: depth, camera: frame.camera)  // NEW: shared with saved snapshots
+    }                                                                   // NEW
+
+    // NEW: the old body moved here so it works with a saved camera, not just the live frame
+    /// Image point + depth + camera -> 3D point in the room (meters).
+    static func worldPoint(at imagePoint: CGPoint, depth: Float, camera: ARCamera) -> SIMD3<Float> {   // NEW
         let resolution = camera.imageResolution      // Camera image size in pixels
         let u = Float(imagePoint.x * resolution.width)   // Pixel column
         let v = Float(imagePoint.y * resolution.height)  // Pixel row
@@ -65,5 +74,29 @@ nonisolated enum DepthSampler {
     static func worldPoint(at imagePoint: CGPoint, in frame: ARFrame) -> SIMD3<Float>? {
         guard let depth = depth(at: imagePoint, in: frame) else { return nil }  // LiDAR distance
         return worldPoint(at: imagePoint, depth: depth, in: frame)            // Unproject to 3D
+    }
+    
+    /// Makes our own copy of a depth map, so it stays valid after ARKit reuses the original.
+    static func copy(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        var copy: CVPixelBuffer?                                                    // Filled in by CVPixelBufferCreate
+        CVPixelBufferCreate(nil, CVPixelBufferGetWidth(source), CVPixelBufferGetHeight(source),
+                            CVPixelBufferGetPixelFormatType(source), nil, &copy)    // Same size and format
+        guard let copy else { return nil }
+
+        CVPixelBufferLockBaseAddress(source, .readOnly)                             // Lock both before touching memory
+        CVPixelBufferLockBaseAddress(copy, [])
+        defer {                                                                     // Always unlock when done
+            CVPixelBufferUnlockBaseAddress(copy, [])
+            CVPixelBufferUnlockBaseAddress(source, .readOnly)
+        }
+        guard let from = CVPixelBufferGetBaseAddress(source),
+              let to = CVPixelBufferGetBaseAddress(copy) else { return nil }        // Start of each buffer's pixels
+
+        let fromRowBytes = CVPixelBufferGetBytesPerRow(source)                      // Rows can have padding,
+        let toRowBytes = CVPixelBufferGetBytesPerRow(copy)                          // so copy row by row
+        for row in 0..<CVPixelBufferGetHeight(source) {
+            memcpy(to + row * toRowBytes, from + row * fromRowBytes, min(fromRowBytes, toRowBytes))  // One row of depth values
+        }
+        return copy
     }
 }

@@ -24,8 +24,10 @@ nonisolated struct ApproachGuide {
     private var lastSpeechTime: TimeInterval = 0
     private var lastSeenTime: TimeInterval = 0     // Last time a panel was visible
     private var lastBeepTime: TimeInterval = 0
+    private var targetName = "the panel"          // Said when found, e.g. "the elevator buttons"
 
-    mutating func reset(now: TimeInterval) {
+    mutating func reset(now: TimeInterval, targetName: String = "the panel") {
+        self.targetName = targetName
         announcedPanel = false
         lastWord = ""
         lastSpeechTime = now + 2                   // Let "Looking for the panel" finish
@@ -58,7 +60,7 @@ nonisolated struct ApproachGuide {
 
         if !announcedPanel {                                                // First sighting: full sentence
             announcedPanel = true
-            step.speech = "Panel found, \(Self.describe(sighting)). \(word)."
+            step.speech = "Stop. Found \(targetName), \(Self.describe(sighting)). \(word)."   // e.g. "Stop. Found the elevator buttons, ..."
             lastWord = word
             lastSpeechTime = now + 2                                        // Give the sentence time
         } else if word != lastWord, now - lastSpeechTime > 1.2 {           // Direction changed
