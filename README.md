@@ -14,6 +14,9 @@ Built solo by **Oliver Rivera** at **Ensign BUILD 2026** (Ensign College, Salt L
 
 Left: a blindfolded user following the app's directions to call an elevator. Right: what the app sees, live.
 
+https://github.com/user-attachments/assets/800eb12e-8205-4db7-8195-b14e5aba6564
+
+
 ---
 
 ## Inspiration
