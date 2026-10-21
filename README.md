@@ -1,3 +1,5 @@
+![TouchSight: solving the last inch of independence](branding/touchsight-readme-banner.png)
+
 # TouchSight
 
 🏆 **Winner, Technical Solution category, Ensign BUILD 2026 (Ensign College's first hackathon)**
@@ -7,6 +9,10 @@
 TouchSight is an iOS app that helps blind and low-vision people press the right buttons on flat, non-tactile panels: microwaves, appliances, and elevators. It tracks the user's fingertip with the iPhone camera and LiDAR, and guides it to the exact button by voice, beeps, and haptics felt against the chest.
 
 Built solo by **Oliver Rivera** at **Ensign BUILD 2026** (Ensign College, Salt Lake City, October 9 to 10, 2026).
+
+## Demo
+
+Left: a blindfolded user following the app's directions to call an elevator. Right: what the app sees, live.
 
 ---
 

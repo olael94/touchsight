@@ -8,6 +8,9 @@ xcuserdata/
 DerivedData/
 build/
 
+# Demo videos (too large for the repo, upload them on GitHub or YouTube instead)
+*.mp4
+
 # macOS and IDE
 .DS_Store
 .idea/
