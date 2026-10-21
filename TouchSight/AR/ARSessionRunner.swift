@@ -203,8 +203,7 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
     func handleLaunch() {
         buttons = []                                                      // Launch = new panel, start fresh
         if let floorGoal = floorGoalAfterCall {                           // User is inside the elevator now
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in  // Let Siri / Shortcuts release the audio
-                try? AVAudioSession.sharedInstance().setActive(true)
+            reclaimAudio { [weak self] in                                     // CHANGED: audio taken back off the main thread
                 self?.coach.announce("Finding the floor buttons.") {
                     self?.startFloorSearch(for: floorGoal, timeLimit: nil)  // Normal search, one full turn
                 }
@@ -214,11 +213,19 @@ final class ARSessionRunner: NSObject, ARSessionDelegate {
         debugPhotoNumber = 0                                              // DEBUG: a new run, start numbering again
         try? FileManager.default.removeItem(at: debugPhotoFolder)        // DEBUG: keep only this run's photos
         scanStatus = "What do you want to do?"                                  // Also show it on screen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in  // Let Siri / Shortcuts release the audio
-            try? AVAudioSession.sharedInstance().setActive(true)                // Take the speaker and mic back
+        reclaimAudio { [weak self] in                                     // CHANGED: audio taken back off the main thread
             self?.coach.announce("What do you want to do?") {                   // CHANGED: listen only after the question ends
                 self?.listenForGoal()
             }
+        }
+    }
+
+    // NEW: whole function below
+    /// Waits for Siri / Shortcuts to let go of the audio, takes the speaker and mic back off the main thread, then continues.
+    private func reclaimAudio(then next: @escaping @MainActor () -> Void) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.0) {   // Background thread, after 1 s
+            try? AVAudioSession.sharedInstance().setActive(true)          // Can take a moment, so not on the main thread
+            Task { @MainActor in next() }                                 // Back to the main thread to speak and listen
         }
     }
     
